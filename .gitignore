@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+
+# Project/runtime artifacts should live under individual game projects, not the toolkit repo.
+docs/automation/generated_candidates/
+docs/automation/generation_runs/
+docs/automation/qa_reports/
+docs/production/
+# Toolkit repo must not contain project-specific title state.
+game/
+docs/automation/project_contract.json
+docs/automation/obsidian_scene_asset_request_batch.json
+docs/automation/generation_queue_batch.json
+log.txt
+traceback.txt
+tests/screenshots/
+*.rpyc
+*.rpymc

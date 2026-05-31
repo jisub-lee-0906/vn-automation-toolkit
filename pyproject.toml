@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vn-automation-toolkit"
+version = "0.1.0"
+description = "Supervised Ren'Py visual novel production automation toolkit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+authors = [
+  {name = "VN Automation Toolkit"}
+]
+
+[project.scripts]
+vn-auto = "vn_automation.cli:main"
+
+[tool.setuptools]
+packages = ["vn_automation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

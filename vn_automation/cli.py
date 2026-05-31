@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+from typing import Sequence
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / 'tools'
+
+COMMANDS: dict[str, tuple[str, str]] = {
+    'init': ('init_vn_automation_project.py', 'Bootstrap VN automation docs/config for a RenPy project.'),
+    'check': ('check_renpy_asset_refs.py', 'Check literal RenPy image/audio refs under game/ exist.'),
+    'gaps': ('report_renpy_integration_gaps.py', 'Report manifest-to-RenPy integration gaps.'),
+    'validate': ('validate_vn_automation_docs.py', 'Validate automation docs, schemas, workflow index, and manifest.'),
+    'sync': ('sync_obsidian_scene_asset_requests.py', 'Extract and resolve Required Assets from Obsidian scene notes.'),
+    'resolve': ('resolve_asset_requests.py', 'Resolve extracted asset requests against manifest/candidates/workflow routes.'),
+    'queue': ('build_owner_review_queue.py', 'Build owner review queue from resolved scene asset requests.'),
+    'generate': ('run_generation_queue.py', 'Run workflow generation for queued generate decisions.'),
+    'promote': ('promote_asset_candidate.py', 'Promote an approved candidate into RenPy assets and manifest.'),
+    'verify': ('verify_vn_automation_runtime.py', 'Run product/runtime verification gates.'),
+    'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),
+    'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='vn-auto',
+        description='Supervised RenPy VN production automation command namespace.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Commands pass all remaining arguments through to the underlying tools/*.py script.',
+    )
+    parser.add_argument('--version', action='store_true', help='Print version and exit.')
+    command_list = '\n'.join(f'  {name:<8} {description}' for name, (_, description) in COMMANDS.items())
+    parser.add_argument('command', nargs='?', choices=sorted(COMMANDS), help=f'Command to run. Available:\n{command_list}')
+    parser.add_argument('args', nargs=argparse.REMAINDER, help='Arguments passed to the selected command.')
+    return parser
+
+
+def dispatch(command: str, args: Sequence[str]) -> int:
+    script_name, _ = COMMANDS[command]
+    script = TOOLS / script_name
+    if not script.exists():
+        print(f'vn-auto: missing command script: {script}', file=sys.stderr)
+        return 2
+    completed = subprocess.run([sys.executable, str(script), *args], cwd=ROOT)
+    return completed.returncode
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    ns = parser.parse_args(argv)
+    if ns.version:
+        from vn_automation import __version__
+
+        print(f'vn-auto {__version__}')
+        return 0
+    if not ns.command:
+        parser.print_help()
+        return 0
+    forwarded = list(ns.args)
+    if forwarded and forwarded[0] == '--':
+        forwarded = forwarded[1:]
+    return dispatch(ns.command, forwarded)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

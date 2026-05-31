@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_PATH = PROJECT_ROOT / 'docs/automation/project_contract.json'
+RUNS_ROOT = PROJECT_ROOT / 'docs/automation/generation_runs'
+
+DEFAULT_NEGATIVE = 'Low quality, music, melody, speech, voice, talking, singing, crowd, rain, wind, siren, police, ambulance, engine rumble, traffic noise, distorted, robotic, electronic'
+DEFAULT_VIDEO_NAME = 'hermes_mmaudio_silent_conditioning_8s_384.mp4'
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def url_json(url: str, timeout: float = 5.0):
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        body = r.read().decode('utf-8', errors='replace')
+        return r.status, json.loads(body) if body else None
+
+
+def discover_endpoint(candidates: list[str]) -> str:
+    errors = []
+    for base in candidates:
+        base = base.rstrip('/')
+        try:
+            status, _ = url_json(base + '/system_stats', timeout=3)
+            if status == 200:
+                return base
+            errors.append(f'{base}: status {status}')
+        except Exception as e:
+            errors.append(f'{base}: {type(e).__name__} {e}')
+    raise RuntimeError('No live ComfyUI endpoint found: ' + '; '.join(errors))
+
+
+def submit_prompt(endpoint: str, workflow: dict) -> str:
+    payload = json.dumps({'prompt': workflow, 'client_id': str(uuid.uuid4())}).encode('utf-8')
+    req = urllib.request.Request(endpoint + '/prompt', data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read().decode('utf-8', errors='replace')
+            data = json.loads(body)
+            print('prompt_submit_status', r.status)
+            print('prompt_submit_response', body)
+            return data['prompt_id']
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')
+        raise RuntimeError(f'/prompt HTTP {e.code}: {body}') from e
+
+
+def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 900) -> dict[str, Any]:
+    deadline = time.time() + timeout_s
+    last_queue_print = 0.0
+    while time.time() < deadline:
+        try:
+            status, hist = url_json(endpoint + '/history/' + prompt_id, timeout=10)
+            if status == 200 and isinstance(hist, dict) and prompt_id in hist:
+                return hist[prompt_id]
+        except Exception:
+            pass
+        if time.time() - last_queue_print > 20:
+            try:
+                _, q = url_json(endpoint + '/queue', timeout=5)
+                print('queue_snapshot', json.dumps(q, ensure_ascii=False)[:500])
+            except Exception as e:
+                print('queue_snapshot_error', type(e).__name__, e)
+            last_queue_print = time.time()
+        time.sleep(5)
+    raise TimeoutError(f'history did not complete within {timeout_s}s for {prompt_id}')
+
+
+def audio_paths_from_history(history: dict[str, Any], output_root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for node_out in history.get('outputs', {}).values():
+        if not isinstance(node_out, dict):
+            continue
+        for key in ('audios', 'audio'):
+            entries = node_out.get(key, [])
+            if isinstance(entries, dict):
+                entries = [entries]
+            for item in entries or []:
+                if not isinstance(item, dict):
+                    continue
+                filename = item.get('filename')
+                subfolder = item.get('subfolder', '') or ''
+                typ = item.get('type', 'output')
+                if filename and typ == 'output':
+                    paths.append(output_root / subfolder / filename)
+    return paths
+
+
+def ensure_conditioning_video(input_root: Path, name: str = DEFAULT_VIDEO_NAME) -> str:
+    target = input_root / name
+    if target.exists():
+        return name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not shutil.which('ffmpeg'):
+        return name
+    cmd = [
+        'ffmpeg', '-y', '-f', 'lavfi', '-i', 'color=c=black:s=384x384:r=25:d=8',
+        '-pix_fmt', 'yuv420p', str(target),
+    ]
+    subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=True)
+    return name
+
+
+def sanitize_slug(value: str) -> str:
+    out = ''.join(ch.lower() if ch.isalnum() else '_' for ch in value).strip('_')
+    while '__' in out:
+        out = out.replace('__', '_')
+    return out or 'sfx'
+
+
+def build_prompt(asset_id: str, description: str) -> str:
+    desc = description.strip() or asset_id.replace('_', ' ')
+    return f'{desc}, realistic visual novel sound effect, short clean foley, close microphone, no music, no speech'
+
+
+def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_id: str, seed: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    contract = load_json(project_root / 'docs/automation/project_contract.json')
+    workflow_root = Path(contract['workflow_pack_root'])
+    output_root = Path(contract.get('comfyui_output_root', ''))
+    input_root = Path(contract.get('comfyui_input_root', '')) if contract.get('comfyui_input_root') else None
+    workflow_path = workflow_root / 'audio_sfx_mmaudio/audio_sfx_mmaudio_workflow_api.json'
+    workflow = load_json(workflow_path)
+    workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    asset_slug = sanitize_slug(asset_id)
+    run_id = f'audio_sfx_mmaudio_{asset_slug}_{timestamp}'
+    run_dir = project_root / 'docs/automation/generation_runs' / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    filename_prefix = f'audio_sfx_mmaudio/{run_id}_{asset_slug}'
+    video_name = DEFAULT_VIDEO_NAME
+    if input_root is not None:
+        video_name = ensure_conditioning_video(input_root)
+
+    workflow['1']['inputs']['video'] = video_name
+    workflow['4']['inputs']['prompt'] = build_prompt(asset_id, description)
+    workflow['4']['inputs']['negative_prompt'] = workflow['4']['inputs'].get('negative_prompt') or DEFAULT_NEGATIVE
+    workflow['4']['inputs']['seed'] = seed
+    workflow['4']['inputs']['duration'] = min(float(workflow['4']['inputs'].get('duration', 8.0)), 8.0)
+    workflow['5']['inputs']['filename_prefix'] = filename_prefix
+
+    patched_workflow_path = run_dir / 'audio_sfx_mmaudio_patched_workflow_api.json'
+    save_json(patched_workflow_path, workflow)
+    metadata = {
+        'run_id': run_id,
+        'asset_id': asset_id,
+        'scene_id': scene_id,
+        'asset_type': 'sfx',
+        'workflow_id': 'audio_sfx_mmaudio',
+        'workflow_path': str(workflow_path),
+        'workflow_sha256': workflow_sha,
+        'patched_workflow_path': str(patched_workflow_path),
+        'output_root': str(output_root),
+        'conditioning_video': video_name,
+        'positive_prompt': workflow['4']['inputs']['prompt'],
+        'negative_prompt': workflow['4']['inputs']['negative_prompt'],
+        'seed': seed,
+        'qa_status': 'pending_file_qa',
+        'promotion_status': 'not_promoted_pending_owner_approval',
+        'candidate_copies': [],
+        'output_paths': [],
+    }
+    return workflow, metadata
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description='Run one MMAudio SFX generation for a resolved VN asset request.')
+    parser.add_argument('--project-root', default=str(PROJECT_ROOT))
+    parser.add_argument('--asset-id', default='sfx_door_knock_soft')
+    parser.add_argument('--description', default='soft door knock')
+    parser.add_argument('--scene-id', default='scene')
+    parser.add_argument('--seed', type=int, default=260530401)
+    parser.add_argument('--prepare-only', action='store_true')
+    parser.add_argument('--out-metadata')
+    args = parser.parse_args(argv)
+
+    project_root = Path(args.project_root).resolve()
+    workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed)
+    run_dir = Path(metadata['patched_workflow_path']).parent
+    metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / 'metadata.json'
+
+    print('RUN_ID', metadata['run_id'])
+    print('PATCHED_WORKFLOW', metadata['patched_workflow_path'])
+    print('PROMPT', metadata['positive_prompt'])
+    print('SEED', metadata['seed'])
+
+    if args.prepare_only:
+        metadata['prepare_only'] = True
+        save_json(metadata_path, metadata)
+        print('METADATA', metadata_path)
+        print('PREPARE_ONLY')
+        return 0
+
+    contract = load_json(project_root / 'docs/automation/project_contract.json')
+    endpoint = discover_endpoint(contract.get('comfyui_endpoint_candidates') or [contract['comfyui_endpoint']])
+    output_root = Path(contract['comfyui_output_root'])
+    metadata['endpoint'] = endpoint
+    print('ENDPOINT', endpoint)
+
+    prompt_id = submit_prompt(endpoint, workflow)
+    print('PROMPT_ID', prompt_id)
+    metadata['prompt_id'] = prompt_id
+    history = wait_history(endpoint, prompt_id)
+    history_path = run_dir / 'history.json'
+    save_json(history_path, history)
+    metadata['history_path'] = str(history_path)
+
+    output_paths = audio_paths_from_history(history, output_root)
+    candidate_dir = project_root / 'docs/automation/generated_candidates/audio' / metadata['run_id']
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    copied_paths = []
+    for p in output_paths:
+        print('OUTPUT_PATH', p, 'exists=', p.exists())
+        if p.exists():
+            dst = candidate_dir / f"candidate_{len(copied_paths) + 1:02d}{p.suffix.lower() or p.suffix or '.bin'}"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dst)
+            copied_paths.append(dst)
+            print('CANDIDATE_COPY', dst)
+
+    metadata['output_paths'] = [str(p) for p in output_paths]
+    metadata['candidate_copies'] = [str(p) for p in copied_paths]
+    save_json(metadata_path, metadata)
+    print('METADATA', metadata_path)
+    if not copied_paths:
+        print('GENERATION_FAILED_NO_VERIFIED_OUTPUT')
+        return 2
+    print('GENERATION_OUTPUT_VERIFIED')
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        raise SystemExit(main())
+    except Exception as e:
+        print('ERROR', type(e).__name__, e, file=sys.stderr)
+        raise
