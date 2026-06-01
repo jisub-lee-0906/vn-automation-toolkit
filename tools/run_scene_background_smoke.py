@@ -62,7 +62,16 @@ def choose_background_tags(asset_id: str, description: str) -> tuple[list[str], 
         mood = ['night', 'indoors'] if any(word in text for word in ['night', 'midnight', 'after midnight']) else ['day', 'sunlight', 'indoors']
         return theme, mood
     if any(word in text for word in ['corridor', 'hallway', 'hall']):
-        return ['school', 'hallway', 'window'], ['evening', 'sunset', 'indoors']
+        theme = ['school', 'hallway', 'window']
+        mood = ['evening', 'indoors']
+        if any(word in text for word in ['rain', 'rainy', 'raining', 'storm', 'wet', 'puddle']):
+            theme.extend(['rain', 'wet', 'puddle', 'reflection'])
+            mood.extend(['overcast', 'dark'])
+        elif 'night' in text:
+            mood.append('night')
+        else:
+            mood.append('sunset')
+        return theme, mood
     if 'classroom' in text:
         return ['school', 'classroom', 'desk', 'chair', 'chalkboard', 'window'], ['evening', 'sunset', 'indoors'] if 'evening' in text else ['day', 'sunlight', 'clear_sky']
     return BACKGROUND_THEME_TAGS, TIME_MOOD_TAGS

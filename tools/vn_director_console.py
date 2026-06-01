@@ -5,6 +5,7 @@ import hashlib
 import html
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -43,6 +44,33 @@ def load_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, An
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding='utf-8')
+
+
+def telegram_media_cache_path(source: Path, scene_id: str, asset_id: str, index: int) -> tuple[Path, str]:
+    """Copy review media to Hermes cache and return (absolute_path, tilde_MEDIA_path)."""
+    cache_dir = Path('C:/Users/Desktop/AppData/Local/hermes/image_cache')
+    safe_stem = slugify(f'{scene_id}_{asset_id}_{index}')
+    target = cache_dir / f'{safe_stem}{source.suffix.lower()}'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return target, f'~/AppData/Local/hermes/image_cache/{target.name}'
+
+
+def build_telegram_media_files(scene_id: str, asset_id: str, candidate_files: list[str]) -> list[dict[str, str]]:
+    media = []
+    for index, raw in enumerate(candidate_files, start=1):
+        source = Path(str(raw)).resolve()
+        if not source.exists() or source.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp', '.gif'}:
+            continue
+        cached_abs, media_path = telegram_media_cache_path(source, scene_id, asset_id, index)
+        media.append({
+            'source_file': str(source),
+            'cached_file': str(cached_abs),
+            'media_path': media_path,
+            'photo_syntax': f'MEDIA:{media_path}',
+            'document_syntax': f'[[as_document]]\nMEDIA:{media_path}',
+        })
+    return media
 
 
 def load_contract(project_root: Path) -> dict[str, Any]:
@@ -386,6 +414,7 @@ def build_telegram_review_items(project_root: Path, queue_data: dict[str, Any]) 
         renpy_name = infer_renpy_name(asset_id, asset_type)
         for idx, candidate in enumerate(item.get('candidate_matches', []) or [], start=1):
             metadata = str(candidate.get('metadata_path') or '')
+            candidate_files = candidate.get('candidate_files', []) or []
             token = make_approval_token(project_root, scene_id, asset_id, metadata, idx)
             items.append({
                 'token': token,
@@ -396,7 +425,8 @@ def build_telegram_review_items(project_root: Path, queue_data: dict[str, Any]) 
                 'asset_type': asset_type,
                 'renpy_name': renpy_name,
                 'metadata_path': metadata,
-                'candidate_files': candidate.get('candidate_files', []) or [],
+                'candidate_files': candidate_files,
+                'telegram_media_files': build_telegram_media_files(scene_id, asset_id, candidate_files),
                 'qa_status': candidate.get('qa_status'),
                 'score': candidate.get('score'),
                 'created_at': datetime.now().isoformat(timespec='seconds'),
@@ -423,7 +453,10 @@ def render_telegram_review_card(project_root: Path, items: list[dict[str, Any]])
         lines.append(f"  - scene/asset: `{item['scene_id']}` / `{item['asset_id']}` ({item['asset_type']})")
         lines.append(f"  - metadata: `{item['metadata_path']}`")
         for file in item.get('candidate_files', []) or []:
-            lines.append(f"  - media: `MEDIA:{file}`")
+            lines.append(f"  - source media: `MEDIA:{file}`")
+        for media in item.get('telegram_media_files', []) or []:
+            lines.append(f"  - telegram photo: `{media['photo_syntax']}`")
+            lines.append(f"  - telegram document: `{media['document_syntax']}`")
         lines.append(f"  - CLI approve: `vn-auto director telegram-approve --project-root \"{project_root}\" --token {item['token']} --approved-text \"승인 {item['token']}\" --approved`")
     lines.extend(['', '## Safety rule', 'Only the exact tokened approval phrase for a pending item should trigger promotion. Old, unknown, or already-used tokens must be rejected.'])
     return '\n'.join(lines).rstrip() + '\n'
@@ -449,7 +482,10 @@ def telegram_review(args: argparse.Namespace) -> int:
         print('token', item['token'], item['asset_id'], item['metadata_path'])
         print('approval_phrase', item['approval_phrase'])
         for file in item.get('candidate_files', []) or []:
-            print('MEDIA', file)
+            print('MEDIA_SOURCE', file)
+        for media in item.get('telegram_media_files', []) or []:
+            print('MEDIA_PHOTO', media.get('photo_syntax'))
+            print('MEDIA_DOCUMENT', media.get('document_syntax'))
     print('registry', registry_path(project_root))
     print('review_card', card)
     return 0
