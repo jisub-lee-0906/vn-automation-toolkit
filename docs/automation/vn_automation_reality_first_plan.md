@@ -295,7 +295,7 @@ tools/extract_asset_requests_from_scene_note.py
 역할:
 
 ```text
-1. 실제 Obsidian vault의 VN/Scenes/*.md scene note를 스캔한다.
+1. title-scoped Obsidian project root의 Scenes/*.md scene note를 스캔한다.
 2. frontmatter scene_id가 있으면 우선 사용하고, 없으면 파일명 slug를 scene_id로 쓴다.
 3. Required Assets 섹션에서 기존 key/value 형식과 Obsidian checklist shorthand를 모두 파싱한다.
    - [ ] background: bg_classroom_evening | description
@@ -303,14 +303,16 @@ tools/extract_asset_requests_from_scene_note.py
 4. scene별 asset_requests.json을 docs/production/asset_requests/에 생성한다.
 5. 같은 scene에 대해 resolve_asset_requests.py를 즉시 실행해 reuse/review/generate decision을 만든다.
 6. resolved_asset_requests.json들을 모아 owner review queue Markdown/JSON을 만든다.
-7. owner review queue는 project docs와 Obsidian Automation note 양쪽에 생성 가능하다.
+7. owner review queue는 project docs와 title-scoped Obsidian Automation note 양쪽에 생성 가능하다.
 ```
 
-실제 Obsidian smoke note:
+현재 권장 Obsidian smoke note 위치:
 
 ```text
-C:/Users/Desktop/Documents/Obsidian Vault/VN/Scenes/seoha_choice_pause.md
+E:/workspace/obsidian-vn/<game_slug>/VN/Scenes/<scene_id>.md
 ```
+
+기존 공용 vault의 `VN/Scenes/*.md` 예시는 legacy smoke 기록이며, 새 게임 기본값으로 사용하지 않는다.
 
 실제 batch 실행 결과:
 
@@ -329,7 +331,7 @@ docs/production/asset_requests/seoha_choice_pause.asset_requests.json
 docs/production/asset_requests/seoha_choice_pause.resolved_asset_requests.json
 docs/production/owner_review_queue.md
 docs/production/owner_review_queue.json
-C:/Users/Desktop/Documents/Obsidian Vault/VN/Automation/Owner_Review_Queue.md
+E:/workspace/obsidian-vn/<game_slug>/VN/Automation/Owner_Review_Queue.md
 ```
 
 현재 `seoha_choice_pause` decision:

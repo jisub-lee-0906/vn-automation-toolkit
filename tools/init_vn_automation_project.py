@@ -4,6 +4,15 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+import re
+
+SLUG_RE = re.compile(r'[^a-z0-9_]+')
+
+
+def slugify(value: str) -> str:
+    slug = SLUG_RE.sub('_', value.strip().lower().replace('-', '_')).strip('_')
+    return slug or 'game'
+
 
 DEFAULT_WORKFLOW_ROUTES = {
     'character_base': 'char_base',
@@ -148,21 +157,30 @@ def write_json(path: Path, data: dict[str, Any], force: bool, planned: list[str]
 
 def build_contract(args: argparse.Namespace, project_root: Path) -> dict[str, Any]:
     game_dir = Path(args.renpy_game_dir) if args.renpy_game_dir else project_root / 'game'
-    workflow_index = Path(args.workflow_index) if args.workflow_index else (Path(args.workflow_pack_root) / 'WORKFLOW_INDEX.json' if args.workflow_pack_root else Path(''))
+    workflow_index = Path(args.workflow_index) if args.workflow_index else (Path(args.workflow_pack_root) / 'WORKFLOW_INDEX.json' if args.workflow_pack_root else None)
     generation_runs_root = project_root / 'docs/automation/generation_runs'
     generated_candidates_root = project_root / 'docs/automation/generated_candidates'
     promotion_log_root = project_root / 'docs/production/promotions'
     comfyui_input_root = Path(args.comfyui_input_root)
     comfyui_output_root = Path(args.comfyui_output_root)
+    game_title = args.game_title or project_root.name.replace('_', ' ').replace('-', ' ').title()
+    game_slug = args.game_slug or slugify(project_root.name)
+    obsidian_vault = Path(args.obsidian_vault).resolve() if args.obsidian_vault else None
+    obsidian_project_root = Path(args.obsidian_project_root).resolve() if args.obsidian_project_root else (obsidian_vault / 'VN' if obsidian_vault else None)
+    obsidian_scenes_glob = args.obsidian_scenes_glob or ('Scenes/*.md' if obsidian_project_root else '')
     return {
         'version': '1.0.0',
         'environment': args.environment,
-        'obsidian_vault': args.obsidian_vault or '',
+        'game_title': game_title,
+        'game_slug': game_slug,
+        'obsidian_vault': obsidian_vault.as_posix() if obsidian_vault else '',
+        'obsidian_project_root': obsidian_project_root.as_posix() if obsidian_project_root else '',
+        'obsidian_scenes_glob': obsidian_scenes_glob,
         'renpy_project_root': project_root.as_posix(),
         'renpy_game_dir': game_dir.as_posix(),
         'renpy_sdk_exe': args.renpy_sdk_exe or '',
         'workflow_pack_root': args.workflow_pack_root or '',
-        'workflow_index': workflow_index.as_posix() if str(workflow_index) else '',
+        'workflow_index': workflow_index.as_posix() if workflow_index else '',
         'comfyui_endpoint': args.comfyui_endpoint,
         'comfyui_endpoint_candidates': args.comfyui_endpoint_candidates.split(','),
         'comfyui_input_root': comfyui_input_root.as_posix(),
@@ -200,14 +218,15 @@ def scaffold(args: argparse.Namespace) -> dict[str, Any]:
         (project_root / 'docs/production/owner_review_queue.md', '# VN Owner Review Queue\n\n- None\n', 'text'),
         (project_root / 'docs/production/owner_review_queue.json', {'review_items': [], 'generation_items': [], 'blocked_items': []}, 'json'),
     ]
-    if args.obsidian_vault:
-        vault = Path(args.obsidian_vault).resolve()
+    obsidian_project_root_raw = contract.get('obsidian_project_root')
+    if obsidian_project_root_raw:
+        obs_root = Path(obsidian_project_root_raw).resolve()
         files.extend([
-            (vault / 'VN/00_Index.md', '# VN Index\n\n- [[Automation/VN_Automation_Design]]\n', 'text'),
-            (vault / 'VN/Automation/VN_Automation_Design.md', DESIGN_DOC, 'text'),
-            (vault / 'VN/Templates/Scene_Note_Template.md', SCENE_TEMPLATE, 'text'),
-            (vault / 'VN/Templates/Character_Note_Template.md', CHARACTER_TEMPLATE, 'text'),
-            (vault / 'VN/Templates/Asset_Request_Template.md', ASSET_REQUEST_TEMPLATE, 'text'),
+            (obs_root / '00_Index.md', f"# {contract.get('game_title', project_root.name)} VN Index\n\n- Game slug: `{contract.get('game_slug', project_root.name)}`\n- [[Automation/VN_Automation_Design]]\n", 'text'),
+            (obs_root / 'Automation/VN_Automation_Design.md', DESIGN_DOC, 'text'),
+            (obs_root / 'Templates/Scene_Note_Template.md', SCENE_TEMPLATE, 'text'),
+            (obs_root / 'Templates/Character_Note_Template.md', CHARACTER_TEMPLATE, 'text'),
+            (obs_root / 'Templates/Asset_Request_Template.md', ASSET_REQUEST_TEMPLATE, 'text'),
         ])
     for path, content, kind in files:
         if args.dry_run:
@@ -228,6 +247,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--workflow-pack-root', default='')
     parser.add_argument('--workflow-index', default='')
     parser.add_argument('--obsidian-vault', default='')
+    parser.add_argument('--obsidian-project-root', default='', help='Title-specific Obsidian project root, normally <vault>/VN.')
+    parser.add_argument('--obsidian-scenes-glob', default='', help='Scene-note glob relative to obsidian_project_root. Defaults to Scenes/*.md.')
+    parser.add_argument('--game-title', default='', help='Human title stored in project_contract.json.')
+    parser.add_argument('--game-slug', default='', help='Stable title slug stored in project_contract.json.')
     parser.add_argument('--environment', default='windows-native')
     parser.add_argument('--comfyui-endpoint', default='http://127.0.0.1:8000')
     parser.add_argument('--comfyui-endpoint-candidates', default='http://127.0.0.1:8000,http://127.0.0.1:8001,http://127.0.0.1:8188')

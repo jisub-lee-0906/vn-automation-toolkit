@@ -21,6 +21,12 @@ REQUIRED_CONTRACT_KEYS = [
     'workflow_index',
     'manifest_path',
 ]
+REQUIRED_CONTRACT_METADATA_KEYS = [
+    'game_title',
+    'game_slug',
+    'obsidian_project_root',
+    'obsidian_scenes_glob',
+]
 EXPECTED_WORKFLOW_IDS = {
     'char_base',
     'char_expression',
@@ -52,11 +58,11 @@ REQUIRED_PROJECT_RELS = [
     'game/data/asset_manifest.json',
 ]
 REQUIRED_OBSIDIAN_RELS = [
-    'VN/00_Index.md',
-    'VN/Automation/VN_Automation_Design.md',
-    'VN/Templates/Scene_Note_Template.md',
-    'VN/Templates/Character_Note_Template.md',
-    'VN/Templates/Asset_Request_Template.md',
+    '00_Index.md',
+    'Automation/VN_Automation_Design.md',
+    'Templates/Scene_Note_Template.md',
+    'Templates/Character_Note_Template.md',
+    'Templates/Asset_Request_Template.md',
 ]
 REQUIRED_ASSET_KEYS = {
     'asset_id',
@@ -87,6 +93,20 @@ def validate_contract(paths, errors: list[str]) -> None:
             errors.append(f'CONTRACT missing key {key}')
         else:
             require(Path(contract[key]), key, errors)
+    # Backward compatible normalization: older contracts did not store title-scoped
+    # Obsidian metadata, but new init writes it. Validate the effective layout rather
+    # than treating plain metadata values as filesystem paths.
+    if not contract.get('game_title'):
+        contract['game_title'] = Path(contract.get('renpy_project_root') or '').name.replace('_', ' ').replace('-', ' ').title()
+    if not contract.get('game_slug'):
+        contract['game_slug'] = Path(contract.get('renpy_project_root') or '').name.replace('-', '_').lower() or 'game'
+    if not contract.get('obsidian_project_root') and contract.get('obsidian_vault'):
+        contract['obsidian_project_root'] = str(Path(contract['obsidian_vault']) / 'VN')
+    if not contract.get('obsidian_scenes_glob'):
+        contract['obsidian_scenes_glob'] = 'Scenes/*.md' if contract.get('obsidian_project_root') else 'VN/Scenes/*.md'
+    for key in REQUIRED_CONTRACT_METADATA_KEYS:
+        if not contract.get(key):
+            errors.append(f'CONTRACT missing key {key}')
     workflow_index = Path(contract.get('workflow_index', ''))
     workflow_root = Path(contract.get('workflow_pack_root', ''))
     if workflow_index.exists():
@@ -154,13 +174,14 @@ def validate_project(paths, validate_obsidian: bool = True) -> list[str]:
     for rel in REQUIRED_PROJECT_RELS:
         require(paths.project_root / rel, rel, errors)
     if validate_obsidian:
-        vault_raw = paths.contract.get('obsidian_vault')
-        if vault_raw:
-            vault = Path(vault_raw)
+        obs_root_raw = paths.contract.get('obsidian_project_root') or paths.contract.get('obsidian_vault')
+        if obs_root_raw:
+            obs_root = Path(obs_root_raw)
+            legacy_prefix = Path('VN') if not paths.contract.get('obsidian_project_root') else Path()
             for rel in REQUIRED_OBSIDIAN_RELS:
-                require(vault / rel, 'obsidian:' + rel, errors)
+                require(obs_root / legacy_prefix / rel, 'obsidian:' + str(legacy_prefix / rel), errors)
         else:
-            errors.append('CONTRACT missing obsidian_vault for obsidian validation')
+            errors.append('CONTRACT missing obsidian_project_root/obsidian_vault for obsidian validation')
     validate_manifest(paths, errors)
     return errors
 

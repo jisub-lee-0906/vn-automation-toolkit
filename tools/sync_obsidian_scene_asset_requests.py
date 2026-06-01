@@ -36,13 +36,16 @@ def scene_id_from_note(note: Path) -> str:
     return slugify(note.stem)
 
 
-def default_vault_from_contract(project_root: Path) -> Path | None:
+def default_obsidian_from_contract(project_root: Path) -> tuple[Path | None, str | None]:
     contract = project_root / 'docs/automation/project_contract.json'
     if not contract.exists():
-        return None
+        return None, None
     data = json.loads(contract.read_text(encoding='utf-8'))
-    raw = data.get('obsidian_vault')
-    return Path(raw) if raw else None
+    root_raw = data.get('obsidian_project_root') or data.get('obsidian_vault')
+    if not root_raw:
+        return None, data.get('obsidian_scenes_glob')
+    notes_glob = data.get('obsidian_scenes_glob') or ('Scenes/*.md' if data.get('obsidian_project_root') else 'VN/Scenes/*.md')
+    return Path(root_raw), notes_glob
 
 
 def resolve_args(project_root: Path, asset_requests: Path, out: Path) -> argparse.Namespace:
@@ -56,11 +59,30 @@ def resolve_args(project_root: Path, asset_requests: Path, out: Path) -> argpars
     )
 
 
+def validate_notes_glob(notes_glob: str) -> None:
+    pattern_path = Path(notes_glob)
+    normalized_parts = notes_glob.replace('\\', '/').split('/')
+    if pattern_path.is_absolute() or notes_glob.startswith(('/', '\\')) or ':' in normalized_parts[0]:
+        raise ValueError(f'notes_glob must be relative to the Obsidian project root: {notes_glob}')
+    if any(part == '..' for part in normalized_parts):
+        raise ValueError(f'notes_glob must not contain parent traversal: {notes_glob}')
+
+
+def ensure_under(child: Path, parent: Path) -> None:
+    child_r = child.resolve()
+    parent_r = parent.resolve()
+    if child_r != parent_r and parent_r not in child_r.parents:
+        raise ValueError(f'note escaped Obsidian project root: {child}')
+
+
 def sync_notes(project_root: Path, vault: Path, notes_glob: str, out_summary: Path) -> dict[str, Any]:
+    validate_notes_glob(notes_glob)
+    vault = vault.resolve()
     asset_requests_dir = project_root / 'docs/production/asset_requests'
     scenes = []
     skipped = []
     for note in sorted(vault.glob(notes_glob)):
+        ensure_under(note, vault)
         if not note.is_file():
             continue
         scene_id = scene_id_from_note(note)
@@ -105,23 +127,33 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Extract and resolve Required Assets from Obsidian scene notes.')
     parser.add_argument('--project-root', default=str(ROOT))
     parser.add_argument('--vault', help='Obsidian vault root. Defaults to project_contract.json obsidian_vault.')
-    parser.add_argument('--notes-glob', default='VN/Scenes/*.md')
+    parser.add_argument('--notes-glob', default=None, help='Glob relative to --vault/obsidian_project_root. Defaults to project_contract obsidian_scenes_glob or VN/Scenes/*.md.')
     parser.add_argument('--out-summary', default=None)
     args = parser.parse_args(argv)
 
     project_root = Path(args.project_root).resolve()
     out_summary = Path(args.out_summary) if args.out_summary else project_root / 'docs/automation/obsidian_scene_asset_request_batch.json'
-    vault = Path(args.vault) if args.vault else default_vault_from_contract(project_root)
+    default_root, default_glob = default_obsidian_from_contract(project_root)
+    vault = Path(args.vault) if args.vault else default_root
+    if args.vault and args.notes_glob is None and default_root is not None:
+        explicit_root = Path(args.vault).resolve()
+        default_root_resolved = default_root.resolve()
+        # Backward compatibility: --vault historically meant the Obsidian vault root.
+        # New contracts store obsidian_project_root as <vault>/VN, so normalize an
+        # explicitly supplied legacy vault root to the contract's title project root.
+        if explicit_root != default_root_resolved and (explicit_root / 'VN').resolve() == default_root_resolved:
+            vault = default_root
+    notes_glob = args.notes_glob or default_glob or 'VN/Scenes/*.md'
     if vault is None:
-        print('SYNC_FAILED: missing --vault and no obsidian_vault in project_contract.json')
+        print('SYNC_FAILED: missing --vault and no obsidian_project_root/obsidian_vault in project_contract.json')
         return 1
     if not vault.exists():
         print(f'SYNC_FAILED: missing vault: {vault}')
         return 1
 
     try:
-        data = sync_notes(project_root, vault, args.notes_glob, out_summary)
-    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        data = sync_notes(project_root, vault, notes_glob, out_summary)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
         print(f'SYNC_FAILED: {exc}')
         return 1
 

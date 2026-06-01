@@ -78,13 +78,27 @@ def load_contract(project_root: Path) -> dict[str, Any]:
 
 
 def contract_vault(project_root: Path, explicit: str | None = None) -> Path:
-    if explicit:
-        return Path(explicit).resolve()
     contract = load_contract(project_root)
-    raw = contract.get('obsidian_vault')
+    if explicit:
+        root = Path(explicit).resolve()
+        # Backward compatibility: --vault historically meant the Obsidian vault root,
+        # while new-scene writes under the title project root that contains Scenes/.
+        # If the caller wants to pass the project root directly, pass the .../VN path.
+        if root.name != 'VN':
+            root = root / 'VN'
+        return root
+    raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault')
     if not raw:
-        raise ValueError('missing Obsidian vault: pass --vault or run init with --obsidian-vault')
-    return Path(raw).resolve()
+        raise ValueError('missing Obsidian project root: pass --vault or run init with --obsidian-vault')
+    root = Path(raw).resolve()
+    if not contract.get('obsidian_project_root') and root.name != 'VN':
+        root = root / 'VN'
+    return root
+
+
+def contract_scenes_glob(project_root: Path) -> str:
+    contract = load_contract(project_root)
+    return contract.get('obsidian_scenes_glob') or 'Scenes/*.md'
 
 
 def queue_counts(project_root: Path) -> dict[str, int]:
@@ -107,7 +121,7 @@ def recent_director_cards(project_root: Path) -> list[Path]:
 def status(args: argparse.Namespace) -> int:
     project_root = Path(args.project_root).resolve()
     contract = load_contract(project_root)
-    vault_raw = contract.get('obsidian_vault') or ''
+    vault_raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault') or ''
     vault = Path(vault_raw) if vault_raw else None
     manifest = project_root / 'game/data/asset_manifest.json'
     queue = project_root / 'docs/production/owner_review_queue.json'
@@ -740,7 +754,7 @@ def new_scene(args: argparse.Namespace) -> int:
 
     scene_id = slugify(args.scene_id)
     title = args.title or scene_id.replace('_', ' ').title()
-    note = vault / 'VN/Scenes' / f'{scene_id}.md'
+    note = vault / 'Scenes' / f'{scene_id}.md'
     draft = project_root / 'game/scripts' / f'{scene_id}.rpy' if args.playable_placeholder else None
     protected_existing = [path for path in [note, draft] if path and path.exists()]
     if protected_existing and not args.force:
@@ -754,7 +768,7 @@ def new_scene(args: argparse.Namespace) -> int:
         write_text(draft, render_placeholder_rpy(scene_id, title, args.summary, args.goal, args.choice))
 
     summary_path = project_root / 'docs/automation/obsidian_scene_asset_request_batch.json'
-    sync_data = sync_notes(project_root, vault, f'VN/Scenes/{scene_id}.md', summary_path)
+    sync_data = sync_notes(project_root, vault, f'Scenes/{scene_id}.md', summary_path)
     queue_data = refresh_queue(project_root)
     card = project_root / 'docs/production/director_cards' / f'{scene_id}.md'
     write_text(card, render_director_card(project_root, scene_id, title, note, draft, queue_data))
