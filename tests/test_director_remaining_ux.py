@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 from test_director_ux_console import bootstrap_moonlit_library, run_cli

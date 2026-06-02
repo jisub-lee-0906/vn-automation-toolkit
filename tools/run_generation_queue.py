@@ -19,10 +19,12 @@ from qa_asset_file import inspect_asset  # noqa: E402
 
 DEFAULT_RUNNERS = {
     'audio_sfx_mmaudio': f'{sys.executable} {TOOLS / "run_audio_sfx_mmaudio_smoke.py"}',
+    'char_base': f'{sys.executable} {TOOLS / "run_char_base_smoke.py"}',
     'scene_background': f'{sys.executable} {TOOLS / "run_scene_background_smoke.py"}',
     'scene_event_cg': f'{sys.executable} {TOOLS / "run_scene_event_cg_smoke.py"}',
     'scene_prop_cg': f'{sys.executable} {TOOLS / "run_scene_prop_cg_smoke.py"}',
 }
+PROMPT_SENSITIVE_WORKFLOWS = {'scene_background', 'scene_event_cg', 'scene_prop_cg', 'char_base', 'audio_sfx_mmaudio'}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -59,8 +61,39 @@ def collect_generate_items(project_root: Path, resolved_glob: str) -> list[dict[
                 'asset_type': item.get('asset_type'),
                 'description': item.get('description', ''),
                 'workflow_id': item.get('recommended_workflow_id'),
+                'prompt_slots_path': item.get('prompt_slots_path'),
+                'prompt_slots': item.get('prompt_slots'),
             })
     return items
+
+
+def prompt_slots_path_for(project_root: Path, item: dict[str, Any]) -> Path | None:
+    def slugify(value: str) -> str:
+        out = ''.join(ch.lower() if ch.isalnum() else '_' for ch in value).strip('_')
+        while '__' in out:
+            out = out.replace('__', '_')
+        return out
+
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    asset_id = slugify(str(item.get('asset_id') or ''))
+    scene_id = slugify(str(item.get('scene_id') or ''))
+    candidates = []
+    raw = item.get('prompt_slots_path') or item.get('prompt_slots')
+    if isinstance(raw, str) and raw.strip():
+        candidates.append(Path(raw))
+    if scene_id and asset_id:
+        candidates.append(root / f'{scene_id}__{asset_id}.json')
+    if asset_id:
+        candidates.append(root / f'{asset_id}.json')
+    for path in candidates:
+        p = (path if path.is_absolute() else project_root / path).resolve()
+        try:
+            p.relative_to(root)
+        except ValueError:
+            continue
+        if p.exists() and p.is_file():
+            return p
+    return None
 
 
 def metadata_path_from_stdout(stdout: str) -> Path | None:
@@ -68,6 +101,16 @@ def metadata_path_from_stdout(stdout: str) -> Path | None:
         if line.startswith('METADATA '):
             return Path(line.split(' ', 1)[1].strip())
     return None
+
+
+def confine_metadata_path(project_root: Path, metadata_path: Path) -> Path | None:
+    root = (project_root / 'docs/automation/generation_runs').resolve()
+    resolved = (metadata_path if metadata_path.is_absolute() else project_root / metadata_path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return None
+    return resolved if resolved.exists() and resolved.is_file() else None
 
 
 def qa_candidate_files(project_root: Path, metadata: dict[str, Any], asset_type: str | None, run_id: str) -> list[dict[str, Any]]:
@@ -89,12 +132,22 @@ def qa_candidate_files(project_root: Path, metadata: dict[str, Any], asset_type:
 
 
 def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> dict[str, Any]:
+    workflow_id = str(item.get('workflow_id') or '')
+    prompt_slots_path = prompt_slots_path_for(project_root, item) if workflow_id in PROMPT_SENSITIVE_WORKFLOWS else None
+    if workflow_id in PROMPT_SENSITIVE_WORKFLOWS and prompt_slots_path is None:
+        return {
+            **item,
+            'status': 'failed_missing_prompt_slots',
+            'reason': 'prompt_sensitive_workflow_requires_agent_authored_prompt_slots',
+        }
     command = shlex.split(runner_command, posix=(os.name != 'nt')) + [
         '--project-root', str(project_root),
         '--asset-id', str(item.get('asset_id') or ''),
         '--description', str(item.get('description') or ''),
         '--scene-id', str(item.get('scene_id') or ''),
     ]
+    if prompt_slots_path is not None:
+        command += ['--prompt-slots', str(prompt_slots_path)]
     proc = subprocess.run(command, cwd=project_root, text=True, capture_output=True, timeout=900)
     result: dict[str, Any] = {
         **item,
@@ -104,12 +157,16 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> di
         'stderr': proc.stderr,
         'status': 'failed' if proc.returncode else 'generated',
     }
-    metadata_path = metadata_path_from_stdout(proc.stdout)
-    if metadata_path:
-        result['metadata_path'] = str(metadata_path)
+    raw_metadata_path = metadata_path_from_stdout(proc.stdout)
+    metadata_path = confine_metadata_path(project_root, raw_metadata_path) if raw_metadata_path else None
+    if raw_metadata_path:
+        result['metadata_path'] = str(raw_metadata_path)
     if proc.returncode != 0:
         return result
-    if not metadata_path or not metadata_path.exists():
+    if raw_metadata_path and metadata_path is None:
+        result['status'] = 'failed_untrusted_metadata_path'
+        return result
+    if not metadata_path:
         result['status'] = 'failed_missing_metadata'
         return result
     metadata = load_json(metadata_path)

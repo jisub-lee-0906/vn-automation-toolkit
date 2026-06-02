@@ -100,6 +100,21 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
         'promotion_status': 'not_promoted_pending_owner_approval',
     })
 
+    # A semantically rejected candidate must not remain in owner review even when asset_id matches.
+    rejected_bg = project / 'docs/automation/generated_candidates/backgrounds/run_rejected_classroom/bus.png'
+    rejected_bg.parent.mkdir(parents=True, exist_ok=True)
+    rejected_bg.write_bytes(b'candidate')
+    write_json(project / 'docs/automation/generation_runs/run_rejected_classroom/metadata.json', {
+        'run_id': 'run_rejected_classroom',
+        'asset_id': 'bg_bus_interior_dawn',
+        'asset_type': 'background',
+        'workflow_id': 'scene_background',
+        'positive_prompt': 'school, classroom, desk, chair, chalkboard, window, day, sunlight, clear_sky',
+        'candidate_copies': [str(rejected_bg)],
+        'qa_status': 'semantic_rejected_prompt_routing',
+        'promotion_status': 'rejected_semantic_mismatch',
+    })
+
     requests = project / 'docs/production/asset_requests/sample.asset_requests.json'
     write_json(requests, {
         'scene_id': 'sample',
@@ -107,6 +122,7 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
             {'asset_id': 'bg_classroom_morning', 'asset_type': 'background', 'description': 'existing classroom'},
             {'asset_id': 'event_cg_seoha_choice_pause', 'asset_type': 'event_cg', 'description': 'Seoha hesitates before the first choice'},
             {'asset_id': 'sfx_paper_slide_soft', 'asset_type': 'sfx', 'description': 'soft paper sliding across a classroom desk'},
+            {'asset_id': 'bg_bus_interior_dawn', 'asset_type': 'background', 'description': '새벽 첫차 버스 내부'},
         ],
     })
     out = tmp_path / 'resolved.json'
@@ -115,7 +131,7 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert 'reuse_manifest 1' in proc.stdout
     assert 'review_existing_candidate 1' in proc.stdout
-    assert 'generate 1' in proc.stdout
+    assert 'generate 2' in proc.stdout
 
     data = json.loads(out.read_text(encoding='utf-8'))
     decisions = {item['asset_id']: item for item in data['resolved_asset_requests']}
@@ -125,6 +141,8 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
     assert decisions['event_cg_seoha_choice_pause']['candidate_matches'][0]['run_id'] == 'run_event'
     assert decisions['sfx_paper_slide_soft']['decision'] == 'generate'
     assert decisions['sfx_paper_slide_soft']['recommended_workflow_id'] == 'audio_sfx_mmaudio'
+    assert decisions['bg_bus_interior_dawn']['decision'] == 'generate'
+    assert decisions['bg_bus_interior_dawn']['candidate_matches'] == []
 
 
 def test_resolver_blocks_manifest_hit_with_missing_file(tmp_path: Path):

@@ -39,11 +39,7 @@ README_NEGATIVE = (
     "dialogue_box, caption"
 )
 
-# Minimal placeholder tags chosen directly from scene_prop_cg/README.md and verified against danbooru_tag.csv.
-ITEM_FORM_TAGS = ["key"]
-MATERIAL_DETAIL_TAGS = ["scratches"]
-PLACEMENT_BACKGROUND_TAGS = ["wooden_table"]
-SEED = 260529102
+SEED = 260530101
 WIDTH = 1024
 HEIGHT = 576
 STEPS = 30
@@ -55,20 +51,52 @@ def slugify(value: str) -> str:
     return slug or 'prop'
 
 
-def choose_prop_tags(asset_id: str, description: str) -> tuple[list[str], list[str], list[str]]:
-    text = f'{asset_id} {description}'.lower()
-    wants_neutral_note = any(word in text for word in ['neutral', 'plain', 'no heart', 'no seal', 'no wax'])
-    if any(word in text for word in ['paper', 'note', 'letter']):
-        if wants_neutral_note:
-            # For neutral folded-note requests, keep an envelope/folded cue to
-            # avoid pseudo-writing on open paper, but suppress seals/hearts via
-            # the negative prompt below.
-            return ['envelope', 'paper'], ['folded'], ['wooden_table']
-        # Use an envelope-shaped cue for folded-note requests. Plain paper/note
-        # tends to generate lined sheets with pseudo-writing, which violates the
-        # VN no-readable-text prop gate.
-        return ['envelope', 'paper'], ['folded'], ['wooden_table']
-    return ITEM_FORM_TAGS, MATERIAL_DETAIL_TAGS, PLACEMENT_BACKGROUND_TAGS
+def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    resolved = (path if path.is_absolute() else project_root / path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f'Prompt slots path must be under {root}: {resolved}') from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise RuntimeError(f'Prompt slots file not found: {resolved}')
+    return resolved
+
+
+def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> Path | None:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    candidates = []
+    if scene_id and asset_id:
+        candidates.append(root / f'{slugify(scene_id)}__{slugify(asset_id)}.json')
+    if asset_id:
+        candidates.append(root / f'{slugify(asset_id)}.json')
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def listify(value) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(',') if part.strip()]
+    if isinstance(value, list):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], list[str], dict]:
+    data = load_json(path)
+    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
+        raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
+    slots = data.get('prompt_slots') or {}
+    item_form = listify(slots.get('item_form'))
+    material = listify(slots.get('material_detail'))
+    placement = listify(slots.get('placement_background'))
+    if not item_form or not material or not placement:
+        raise RuntimeError('UNROUTED_SCENE_PROP_CG: agent-authored prompt_slots.item_form/material_detail/placement_background are required')
+    return item_form, material, placement, data
 
 
 def load_json(path: Path):
@@ -148,6 +176,7 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 600) -> dict:
 
 
 def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
+    root = output_root.resolve()
     paths = []
     for node_out in history.get("outputs", {}).values():
         if not isinstance(node_out, dict):
@@ -157,7 +186,12 @@ def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
             subfolder = img.get("subfolder", "") or ""
             typ = img.get("type", "output")
             if filename and typ == "output":
-                paths.append(output_root / subfolder / filename)
+                candidate = (root / subfolder / filename).resolve()
+                try:
+                    candidate.relative_to(root)
+                except ValueError:
+                    continue
+                paths.append(candidate)
     return paths
 
 
@@ -168,12 +202,16 @@ def main() -> int:
     parser.add_argument('--description', default='')
     parser.add_argument('--scene-id', default='')
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument('--prompt-slots', help='Agent-authored prompt slots JSON. Required for production scene_prop_cg generation.')
     args = parser.parse_args()
     seed = args.seed
     project_root = Path(args.project_root)
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
-    item_form_tags, material_detail_tags, placement_background_tags = choose_prop_tags(args.asset_id, args.description)
+    prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
+    if prompt_slots_path is None:
+        raise RuntimeError('UNROUTED_SCENE_PROP_CG: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    item_form_tags, material_detail_tags, placement_background_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_prop_cg', args.asset_id)
 
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
@@ -187,22 +225,15 @@ def main() -> int:
     if missing:
         raise RuntimeError(f"CSV tag validation failed for placeholder tags: {missing}")
 
-    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
-    request_text = f'{args.asset_id} {args.description}'.lower()
     positive = README_POSITIVE.format(
         item_form=", ".join(item_form_tags),
         material_detail=", ".join(material_detail_tags),
         placement_background=", ".join(placement_background_tags),
     )
     negative = README_NEGATIVE
-    if any(word in request_text for word in ['single envelope', 'one envelope', 'envelope one', 'single_envelope']):
-        positive += ', solo, (single closed envelope:1.45), (only one envelope:1.35), centered composition'
-        negative += ', two envelopes, multiple envelopes, extra envelope, duplicate envelope, pair, twin, stack'
-    if any(word in request_text for word in ['no heart', 'no seal', 'no wax', 'neutral', 'plain']):
-        negative += ', heart, heart-shaped, heart_symbol, wax_seal, seal, red_seal, envelope_seal, romantic'
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     request_slug = slugify(args.asset_id or args.scene_id or 'prop')
@@ -224,15 +255,17 @@ def main() -> int:
     patched_workflow_path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("RUN_ID", run_id)
-    print("ENDPOINT", endpoint)
     print("WORKFLOW", str(workflow_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README wrapper + minimal CSV-verified placeholder tags only")
+    print("PROMPT_POLICY", "README wrapper + agent-authored CSV-verified prompt slots")
+    print("PROMPT_SLOTS", str(prompt_slots_path))
     print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE", negative)
     print("SEED", seed)
 
+    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
+    print("ENDPOINT", endpoint)
     prompt_id = submit_prompt(endpoint, workflow)
     print("PROMPT_ID", prompt_id)
     history = wait_history(endpoint, prompt_id)
@@ -264,7 +297,10 @@ def main() -> int:
         "patched_workflow_path": str(patched_workflow_path),
         "endpoint": endpoint,
         "prompt_id": prompt_id,
-        "prompt_policy": "README wrapper + minimal CSV-verified placeholder tags only",
+        "prompt_source": "agent_authored_prompt_slots",
+        "prompt_slots_path": str(prompt_slots_path),
+        "prompt_slots": prompt_slots_data,
+        "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots",
         "csv_placeholder_tags": placeholder_tags,
         "positive_prompt": positive,
         "negative_prompt": negative,

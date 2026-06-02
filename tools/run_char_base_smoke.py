@@ -13,6 +13,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import shutil
 import sys
 import time
@@ -40,14 +41,63 @@ README_NEGATIVE = (
     "conjoined, bad_ai-generated, (worst_quality, bad_quality:1.2), shadow, depth_of_field"
 )
 
-# Minimal placeholder tags from char_base/README.md, CSV-verified.
-CHARACTER_FEATURE_TAGS = ["medium_hair", "straight_hair", "blunt_bangs", "brown_hair", "brown_eyes"]
-OUTFIT_DETAIL_TAGS = ["school_uniform", "white_shirt", "brown_cardigan", "blue_skirt", "brown_pantyhose"]
 DEFAULT_SEED = 260529200
 WIDTH = 1152
 HEIGHT = 1536
 STEPS = 28
 CFG = 5.0
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r'[^a-z0-9_]+', '_', value.strip().lower().replace('-', '_')).strip('_')
+    return slug or 'char_base'
+
+
+def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    resolved = (path if path.is_absolute() else project_root / path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f'Prompt slots path must be under {root}: {resolved}') from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise RuntimeError(f'Prompt slots file not found: {resolved}')
+    return resolved
+
+
+def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> Path | None:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    candidates = []
+    if scene_id and asset_id:
+        candidates.append(root / f'{slugify(scene_id)}__{slugify(asset_id)}.json')
+    if asset_id:
+        candidates.append(root / f'{slugify(asset_id)}.json')
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def listify(value) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(',') if part.strip()]
+    if isinstance(value, list):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], dict]:
+    data = load_json(path)
+    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
+        raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
+    slots = data.get('prompt_slots') or {}
+    character_features = listify(slots.get('character_features'))
+    outfit_detail = listify(slots.get('outfit_detail'))
+    if not character_features or not outfit_detail:
+        raise RuntimeError('UNROUTED_CHAR_BASE: agent-authored prompt_slots.character_features and prompt_slots.outfit_detail are required')
+    return character_features, outfit_detail, data
 
 
 def load_json(path: Path):
@@ -127,6 +177,7 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 600) -> dict:
 
 
 def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
+    root = output_root.resolve()
     paths = []
     for node_out in history.get("outputs", {}).values():
         if not isinstance(node_out, dict):
@@ -136,19 +187,33 @@ def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
             subfolder = img.get("subfolder", "") or ""
             typ = img.get("type", "output")
             if filename and typ == "output":
-                paths.append(output_root / subfolder / filename)
+                candidate = (root / subfolder / filename).resolve()
+                try:
+                    candidate.relative_to(root)
+                except ValueError:
+                    continue
+                paths.append(candidate)
     return paths
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--project-root', default=str(PROJECT_ROOT))
+    parser.add_argument('--asset-id', default='char_base')
+    parser.add_argument('--scene-id', default='')
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument('--prompt-slots', help='Agent-authored char_base prompt slots JSON under docs/production/prompt_slots.')
+    parser.add_argument('--prepare-only', action='store_true', help='Patch workflow and write metadata without submitting to ComfyUI.')
+    parser.add_argument('--out-metadata', help='Metadata path for prepare-only/tests. Defaults to run_dir/metadata.json.')
     args = parser.parse_args()
     project_root = Path(args.project_root)
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
     seed = args.seed
+    prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
+    if prompt_slots_path is None:
+        raise RuntimeError('UNROUTED_CHAR_BASE: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    character_feature_tags, outfit_detail_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'char_base', args.asset_id)
 
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
@@ -157,24 +222,24 @@ def main() -> int:
     csv_path = workflow_root / "danbooru_tag.csv"
 
     tags = collect_csv_tags(csv_path)
-    placeholder_tags = CHARACTER_FEATURE_TAGS + OUTFIT_DETAIL_TAGS
+    placeholder_tags = character_feature_tags + outfit_detail_tags
     missing = [t for t in placeholder_tags if t not in tags]
     if missing:
         raise RuntimeError(f"CSV tag validation failed for placeholder tags: {missing}")
 
-    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
     positive = README_POSITIVE.format(
-        character_features=", ".join(CHARACTER_FEATURE_TAGS),
-        outfit_detail=", ".join(OUTFIT_DETAIL_TAGS),
+        character_features=", ".join(character_feature_tags),
+        outfit_detail=", ".join(outfit_detail_tags),
     )
     negative = README_NEGATIVE
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"char_base_smoke_{timestamp}"
-    filename_prefix = f"hermes_vn_char_base_smoke/{run_id}_school_uniform_seed{seed}"
+    asset_slug = slugify(args.asset_id)
+    run_id = f"char_base_{asset_slug}_{timestamp}"
+    filename_prefix = f"hermes_vn_char_base/{run_id}_seed{seed}"
 
     workflow["3"]["inputs"]["text"] = positive
     workflow["4"]["inputs"]["text"] = negative
@@ -191,19 +256,61 @@ def main() -> int:
     patched_workflow_path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("RUN_ID", run_id)
-    print("ENDPOINT", endpoint)
     print("WORKFLOW", str(workflow_path))
-    print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README wrapper + minimal CSV-verified placeholder tags only")
+
+    print("PROMPT_POLICY", "README wrapper + agent-authored CSV-verified prompt slots only")
+    print("PROMPT_SLOTS", str(prompt_slots_path))
     print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE", negative)
     print("SEED", seed)
     print("SCENE_EVENT_CG_SEED_TO_REUSE", seed)
 
+    if args.prepare_only:
+        metadata = {
+            "run_id": run_id,
+            "asset_id": args.asset_id,
+            "scene_id": args.scene_id,
+            "asset_type": "character_base",
+            "workflow_id": "char_base",
+            "workflow_path": str(workflow_path),
+            "workflow_sha256": workflow_sha,
+            "patched_workflow_path": str(patched_workflow_path),
+            "endpoint": None,
+            "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots only",
+            "prompt_source": "agent_authored_prompt_slots",
+            "prompt_slots_path": str(prompt_slots_path),
+            "prompt_slots": prompt_slots_data.get('prompt_slots', {}),
+            "csv_placeholder_tags": placeholder_tags,
+            "character_features": character_feature_tags,
+            "outfit_detail": outfit_detail_tags,
+            "positive_prompt": positive,
+            "negative_prompt": negative,
+            "seed": seed,
+            "scene_event_cg_seed_to_reuse": seed,
+            "width": WIDTH,
+            "height": HEIGHT,
+            "steps": STEPS,
+            "cfg": CFG,
+            "output_paths": [],
+            "candidate_copies": [],
+            "qa_status": "prepare_only",
+            "promotion_status": "not_promoted",
+            "prepare_only": True,
+        }
+        metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / "metadata.json"
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("METADATA", str(metadata_path))
+        print("PREPARE_ONLY")
+        return 0
+
+    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
+    print("ENDPOINT", endpoint)
     prompt_id = submit_prompt(endpoint, workflow)
     print("PROMPT_ID", prompt_id)
     history = wait_history(endpoint, prompt_id)
+
     history_path = run_dir / "history.json"
     history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -222,6 +329,8 @@ def main() -> int:
 
     metadata = {
         "run_id": run_id,
+        "asset_id": args.asset_id,
+        "scene_id": args.scene_id,
         "asset_type": "character_base",
         "workflow_id": "char_base",
         "workflow_path": str(workflow_path),
@@ -229,10 +338,13 @@ def main() -> int:
         "patched_workflow_path": str(patched_workflow_path),
         "endpoint": endpoint,
         "prompt_id": prompt_id,
-        "prompt_policy": "README wrapper + minimal CSV-verified placeholder tags only",
+        "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots only",
+        "prompt_source": "agent_authored_prompt_slots",
+        "prompt_slots_path": str(prompt_slots_path),
+        "prompt_slots": prompt_slots_data.get('prompt_slots', {}),
         "csv_placeholder_tags": placeholder_tags,
-        "character_features": CHARACTER_FEATURE_TAGS,
-        "outfit_detail": OUTFIT_DETAIL_TAGS,
+        "character_features": character_feature_tags,
+        "outfit_detail": outfit_detail_tags,
         "positive_prompt": positive,
         "negative_prompt": negative,
         "seed": seed,
@@ -246,7 +358,8 @@ def main() -> int:
         "qa_status": "pending_visual_review",
         "promotion_status": "not_promoted",
     }
-    metadata_path = run_dir / "metadata.json"
+    metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / "metadata.json"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     print("METADATA", str(metadata_path))
 

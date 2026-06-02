@@ -28,32 +28,53 @@ CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
 RUNS_ROOT = PROJECT_ROOT / "docs/automation/generation_runs"
 DEFAULT_CHAR_BASE_METADATA = RUNS_ROOT / "char_base_smoke_20260530_063002/metadata.json"
 
-# Exact positive shape from scene_event_cg/README.md line 36; only the brace placeholders are filled.
+
+def slugify(value: str) -> str:
+    slug = ''.join(ch.lower() if ch.isalnum() else '_' for ch in value).strip('_')
+    while '__' in slug:
+        slug = slug.replace('__', '_')
+    return slug or 'event_cg'
+
+
+def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    resolved = (path if path.is_absolute() else project_root / path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f'Prompt slots path must be under {root}: {resolved}') from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise RuntimeError(f'Prompt slots file not found: {resolved}')
+    return resolved
+
+
+def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> Path | None:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    candidates = []
+    if scene_id and asset_id:
+        candidates.append(root / f'{slugify(scene_id)}__{slugify(asset_id)}.json')
+    if asset_id:
+        candidates.append(root / f'{slugify(asset_id)}.json')
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def listify(value) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(',') if part.strip()]
+    if isinstance(value, list):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+# Exact quality/subject wrapper from scene_event_cg/README.md, with creative scene context supplied by agent-authored slots.
 README_POSITIVE = (
     "masterpiece, best_quality, amazing_quality, 4k, very_aesthetic, high_resolution, "
     "ultra-detailed, absurdres, newest, 1girl, solo, {character_features}, "
-    "{outfit_detail}, auditorium, indoors, spotlight, depth_of_field"
+    "{outfit_detail}, {scene_context}, depth_of_field"
 )
-
-# Situation-appropriate placeholder values, all verified against danbooru_tag.csv.
-# Placeholder 1: {캐릭터 특징(연령대, 헤어스타일, 눈매, 머리색, 눈색)}
-CHARACTER_FEATURE_TAGS = [
-    "mature_female",
-    "medium_hair",
-    "straight_hair",
-    "blunt_bangs",
-    "downturned_eyes",
-    "brown_hair",
-    "brown_eyes",
-]
-# Placeholder 2: {의상 디테일(의상 이름, 색상_의상종류)}
-OUTFIT_DETAIL_TAGS = [
-    "school_uniform",
-    "white_shirt",
-    "brown_cardigan",
-    "blue_skirt",
-    "brown_pantyhose",
-]
 
 WIDTH = 1024
 HEIGHT = 576
@@ -78,6 +99,21 @@ def collect_csv_tags(csv_path: Path) -> set[str]:
                 if s:
                     tags.add(s)
     return tags
+
+
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], list[str], dict]:
+    data = load_json(path)
+    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
+        raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
+    slots = data.get('prompt_slots') or {}
+    character_features = listify(slots.get('character_features'))
+    outfit_detail = listify(slots.get('outfit_detail'))
+    scene_context = listify(slots.get('scene_context'))
+    if not character_features or not outfit_detail or not scene_context:
+        raise RuntimeError('UNROUTED_SCENE_EVENT_CG: agent-authored prompt_slots.character_features, prompt_slots.outfit_detail, and prompt_slots.scene_context are required')
+    return character_features, outfit_detail, scene_context, data
 
 
 def url_json(url: str, timeout: float = 5.0):
@@ -142,6 +178,7 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 600) -> dict:
 
 
 def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
+    root = output_root.resolve()
     paths = []
     for node_out in history.get("outputs", {}).values():
         if not isinstance(node_out, dict):
@@ -151,13 +188,22 @@ def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
             subfolder = img.get("subfolder", "") or ""
             typ = img.get("type", "output")
             if filename and typ == "output":
-                paths.append(output_root / subfolder / filename)
+                candidate = (root / subfolder / filename).resolve()
+                try:
+                    candidate.relative_to(root)
+                except ValueError:
+                    continue
+                paths.append(candidate)
     return paths
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--project-root', default=str(PROJECT_ROOT))
+    parser.add_argument('--asset-id', default='')
+    parser.add_argument('--description', default='')
+    parser.add_argument('--scene-id', default='')
+    parser.add_argument('--prompt-slots', help='Agent-authored prompt slots JSON. Required for production scene_event_cg generation.')
     parser.add_argument("--char-base-metadata", default=None)
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
@@ -165,6 +211,10 @@ def main() -> int:
     project_root = Path(args.project_root)
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
+    prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
+    if prompt_slots_path is None:
+        raise RuntimeError('UNROUTED_SCENE_EVENT_CG: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    character_feature_tags, outfit_detail_tags, scene_context_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_event_cg', args.asset_id)
     default_char_base_metadata = runs_root / "char_base_smoke_20260530_063002/metadata.json"
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
@@ -176,7 +226,7 @@ def main() -> int:
 
     seed = args.seed if args.seed is not None else int(char_meta.get("scene_event_cg_seed_to_reuse") or char_meta["seed"])
 
-    placeholder_tags = CHARACTER_FEATURE_TAGS + OUTFIT_DETAIL_TAGS
+    placeholder_tags = character_feature_tags + outfit_detail_tags + scene_context_tags
     tags = collect_csv_tags(csv_path)
     missing = [t for t in placeholder_tags if t not in tags]
     if missing:
@@ -187,14 +237,15 @@ def main() -> int:
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
     positive = README_POSITIVE.format(
-        character_features=", ".join(CHARACTER_FEATURE_TAGS),
-        outfit_detail=", ".join(OUTFIT_DETAIL_TAGS),
+        character_features=", ".join(character_feature_tags),
+        outfit_detail=", ".join(outfit_detail_tags),
+        scene_context=", ".join(scene_context_tags),
     )
     original_negative = workflow["10"]["inputs"]["text"]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"scene_event_cg_readme_positive_only_{timestamp}"
-    filename_prefix = f"hermes_vn_scene_event_cg_smoke/{run_id}_school_uniform_seed{seed}"
+    run_id = f"scene_event_cg_{slugify(args.asset_id or args.scene_id or 'readme_positive_only')}_{timestamp}"
+    filename_prefix = f"hermes_vn_scene_event_cg_smoke/{run_id}_seed{seed}"
 
     workflow["100"]["inputs"]["lora_name"] = LORA_NAME
     workflow["100"]["inputs"]["strength_model"] = LORA_STRENGTH_MODEL
@@ -219,7 +270,8 @@ def main() -> int:
     print("WORKFLOW", str(workflow_path))
     print("CHAR_BASE_METADATA", str(char_meta_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README positive exact; fill only brace placeholders with CSV-verified tags; leave workflow negative unchanged")
+    print("PROMPT_POLICY", "README positive exact; fill only brace placeholders with agent-authored CSV-verified prompt slots; leave workflow negative unchanged")
+    print("PROMPT_SLOTS", str(prompt_slots_path))
     print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE_UNCHANGED", original_negative)
@@ -246,6 +298,9 @@ def main() -> int:
 
     metadata = {
         "run_id": run_id,
+        "asset_id": args.asset_id,
+        "scene_id": args.scene_id,
+        "description": args.description,
         "asset_type": "scene_event_cg",
         "workflow_id": "scene_event_cg",
         "workflow_path": str(workflow_path),
@@ -255,10 +310,14 @@ def main() -> int:
         "source_char_base_run_id": char_meta.get("run_id"),
         "endpoint": endpoint,
         "prompt_id": prompt_id,
-        "prompt_policy": "README positive exact; fill only brace placeholders with CSV-verified tags; leave workflow negative unchanged",
+        "prompt_source": "agent_authored_prompt_slots",
+        "prompt_slots_path": str(prompt_slots_path),
+        "prompt_slots": prompt_slots_data,
+        "prompt_policy": "README positive exact; fill only brace placeholders with agent-authored CSV-verified prompt slots; leave workflow negative unchanged",
         "csv_placeholder_tags": placeholder_tags,
-        "character_features_placeholder": CHARACTER_FEATURE_TAGS,
-        "outfit_detail_placeholder": OUTFIT_DETAIL_TAGS,
+        "character_features_placeholder": character_feature_tags,
+        "outfit_detail_placeholder": outfit_detail_tags,
+        "scene_context_placeholder": scene_context_tags,
         "positive_prompt": positive,
         "negative_prompt": original_negative,
         "negative_prompt_policy": "unchanged_from_canonical_workflow",

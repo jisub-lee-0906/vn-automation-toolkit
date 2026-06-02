@@ -35,6 +35,15 @@ def make_project(tmp_path: Path) -> Path:
         'workflow_routes': {'sfx': 'audio_sfx_mmaudio'},
     })
     write_json(project / 'game/data/asset_manifest.json', {'version': '1.0.0', 'assets': []})
+    write_json(project / 'docs/production/prompt_slots/sfx_door_knock_soft.json', {
+        'workflow_id': 'audio_sfx_mmaudio',
+        'asset_id': 'sfx_door_knock_soft',
+        'author': 'agent',
+        'prompt_slots': {
+            'positive_prompt': 'soft door knock, realistic visual novel sound effect, short clean foley, close microphone, no music, no speech',
+            'negative_prompt': 'music, speech, voice, singing, distorted',
+        },
+    })
     resolved = project / 'docs/production/asset_requests/scene.resolved_asset_requests.json'
     write_json(resolved, {
         'scene_id': 'scene',
@@ -56,7 +65,7 @@ def test_generation_orchestrator_runs_generate_items_and_writes_qa_reports(tmp_p
     fake_runner.write_text(
         "import argparse, json, wave\n"
         "from pathlib import Path\n"
-        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id')\n"
+        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--prompt-slots')\n"
         "args=parser.parse_args()\n"
         "root=Path(args.project_root)\n"
         "run_dir=root/'docs/automation/generation_runs/fake_sfx_run'\n"
@@ -110,6 +119,15 @@ def test_audio_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_path: Pat
         '5': {'class_type': 'SaveAudio', 'inputs': {'filename_prefix': 'old_prefix'}},
     }
     write_json(workflow_pack / 'audio_sfx_mmaudio/audio_sfx_mmaudio_workflow_api.json', workflow)
+    slots = project / 'docs/production/prompt_slots/sfx_door_knock_soft.json'
+    write_json(slots, {
+        'workflow_id': 'audio_sfx_mmaudio',
+        'asset_id': 'sfx_door_knock_soft',
+        'prompt_slots': {
+            'positive_prompt': 'soft wooden door knock, realistic visual novel sound effect, short clean foley, close microphone, no music, no speech',
+            'negative_prompt': 'music, speech, voice, singing, distorted',
+        },
+    })
     out = tmp_path / 'prepared.json'
     proc = subprocess.run([
         sys.executable, str(SFX_SCRIPT),
@@ -117,6 +135,7 @@ def test_audio_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_path: Pat
         '--asset-id', 'sfx_door_knock_soft',
         '--description', 'soft wooden door knock',
         '--scene-id', 'scene',
+        '--prompt-slots', str(slots),
         '--prepare-only',
         '--out-metadata', str(out),
     ], cwd=ROOT, text=True, capture_output=True)

@@ -48,6 +48,14 @@ TOKEN_RE = re.compile(r'[a-z0-9]+')
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.webp'}
 AUDIO_EXTS = {'.ogg', '.mp3', '.wav', '.flac'}
 MIN_CANDIDATE_REVIEW_SCORE = 5
+EXCLUDED_CANDIDATE_QA_STATUSES = {
+    'rejected',
+    'semantic_rejected',
+    'semantic_rejected_prompt_routing',
+    'visual_rejected',
+    'failed',
+    'fail',
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -144,6 +152,17 @@ def metadata_search_text(metadata_path: Path, metadata: dict[str, Any], files: l
 def score_candidate(request: dict[str, Any], metadata_path: Path, metadata: dict[str, Any]) -> dict[str, Any] | None:
     req_type = normalize_type(request.get('asset_type'))
     meta_type = normalize_type(metadata.get('asset_type') or metadata.get('workflow_id'))
+    qa_status = str(metadata.get('qa_status') or '').strip().lower()
+    promotion_status = str(metadata.get('promotion_status') or '').strip().lower()
+    rejection_markers = ('failed', 'fail', 'rejected', 'semantic_rejected', 'visual_rejected')
+    if (
+        qa_status in EXCLUDED_CANDIDATE_QA_STATUSES
+        or qa_status.startswith(rejection_markers)
+        or promotion_status.startswith(rejection_markers)
+        or 'semantic_reject' in promotion_status
+        or 'visual_reject' in promotion_status
+    ):
+        return None
     if req_type != 'unknown' and meta_type != req_type:
         return None
     req_asset_id = str(request.get('asset_id') or '').strip().lower()

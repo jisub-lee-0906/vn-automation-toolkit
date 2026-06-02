@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,50 @@ def load_json(path: Path) -> dict[str, Any]:
 def save_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r'[^a-z0-9_]+', '_', value.strip().lower().replace('-', '_')).strip('_')
+    return slug or 'sfx'
+
+
+def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    resolved = (path if path.is_absolute() else project_root / path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f'Prompt slots path must be under {root}: {resolved}') from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise RuntimeError(f'Prompt slots file not found: {resolved}')
+    return resolved
+
+
+def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> Path | None:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    candidates = []
+    if scene_id and asset_id:
+        candidates.append(root / f'{slugify(scene_id)}__{slugify(asset_id)}.json')
+    if asset_id:
+        candidates.append(root / f'{slugify(asset_id)}.json')
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def load_audio_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> dict[str, Any]:
+    data = load_json(path)
+    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
+        raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
+    slots = data.get('prompt_slots') or {}
+    prompt = str(slots.get('positive_prompt') or slots.get('sfx_prompt') or '').strip()
+    if not prompt:
+        raise RuntimeError('UNROUTED_AUDIO_SFX: agent-authored prompt_slots.positive_prompt is required')
+    negative = str(slots.get('negative_prompt') or '').strip()
+    return {'data': data, 'positive_prompt': prompt, 'negative_prompt': negative}
 
 
 def url_json(url: str, timeout: float = 5.0):
@@ -89,6 +134,7 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 900) -> dict[st
 
 
 def audio_paths_from_history(history: dict[str, Any], output_root: Path) -> list[Path]:
+    root = output_root.resolve()
     paths: list[Path] = []
     for node_out in history.get('outputs', {}).values():
         if not isinstance(node_out, dict):
@@ -104,7 +150,12 @@ def audio_paths_from_history(history: dict[str, Any], output_root: Path) -> list
                 subfolder = item.get('subfolder', '') or ''
                 typ = item.get('type', 'output')
                 if filename and typ == 'output':
-                    paths.append(output_root / subfolder / filename)
+                    candidate = (root / subfolder / filename).resolve()
+                    try:
+                        candidate.relative_to(root)
+                    except ValueError:
+                        continue
+                    paths.append(candidate)
     return paths
 
 
@@ -130,12 +181,7 @@ def sanitize_slug(value: str) -> str:
     return out or 'sfx'
 
 
-def build_prompt(asset_id: str, description: str) -> str:
-    desc = description.strip() or asset_id.replace('_', ' ')
-    return f'{desc}, realistic visual novel sound effect, short clean foley, close microphone, no music, no speech'
-
-
-def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_id: str, seed: int) -> tuple[dict[str, Any], dict[str, Any]]:
+def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_id: str, seed: int, prompt_slots_path: Path | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     contract = load_json(project_root / 'docs/automation/project_contract.json')
     workflow_root = Path(contract['workflow_pack_root'])
     output_root = Path(contract.get('comfyui_output_root', ''))
@@ -143,6 +189,10 @@ def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_
     workflow_path = workflow_root / 'audio_sfx_mmaudio/audio_sfx_mmaudio_workflow_api.json'
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
+    resolved_prompt_slots = prompt_slots_path or prompt_slots_path_for(project_root, asset_id, scene_id)
+    if resolved_prompt_slots is None:
+        raise RuntimeError('UNROUTED_AUDIO_SFX: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    prompt_slot_values = load_audio_prompt_slots(resolved_prompt_slots, 'audio_sfx_mmaudio', asset_id)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     asset_slug = sanitize_slug(asset_id)
@@ -155,8 +205,8 @@ def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_
         video_name = ensure_conditioning_video(input_root)
 
     workflow['1']['inputs']['video'] = video_name
-    workflow['4']['inputs']['prompt'] = build_prompt(asset_id, description)
-    workflow['4']['inputs']['negative_prompt'] = workflow['4']['inputs'].get('negative_prompt') or DEFAULT_NEGATIVE
+    workflow['4']['inputs']['prompt'] = prompt_slot_values['positive_prompt']
+    workflow['4']['inputs']['negative_prompt'] = prompt_slot_values['negative_prompt'] or workflow['4']['inputs'].get('negative_prompt') or DEFAULT_NEGATIVE
     workflow['4']['inputs']['seed'] = seed
     workflow['4']['inputs']['duration'] = min(float(workflow['4']['inputs'].get('duration', 8.0)), 8.0)
     workflow['5']['inputs']['filename_prefix'] = filename_prefix
@@ -174,6 +224,9 @@ def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_
         'patched_workflow_path': str(patched_workflow_path),
         'output_root': str(output_root),
         'conditioning_video': video_name,
+        'prompt_source': 'agent_authored_prompt_slots',
+        'prompt_slots_path': str(resolved_prompt_slots),
+        'prompt_slots': prompt_slot_values['data'].get('prompt_slots', {}),
         'positive_prompt': workflow['4']['inputs']['prompt'],
         'negative_prompt': workflow['4']['inputs']['negative_prompt'],
         'seed': seed,
@@ -192,12 +245,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--description', default='soft door knock')
     parser.add_argument('--scene-id', default='scene')
     parser.add_argument('--seed', type=int, default=260530401)
+    parser.add_argument('--prompt-slots', help='Agent-authored audio prompt slots JSON under docs/production/prompt_slots.')
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--out-metadata')
     args = parser.parse_args(argv)
 
     project_root = Path(args.project_root).resolve()
-    workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed)
+    raw_slots = Path(args.prompt_slots) if args.prompt_slots else None
+    prompt_slots_path = resolve_prompt_slots_path(project_root, raw_slots) if raw_slots else None
+    workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed, prompt_slots_path)
     run_dir = Path(metadata['patched_workflow_path']).parent
     metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / 'metadata.json'
 

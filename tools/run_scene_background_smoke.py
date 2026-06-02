@@ -38,9 +38,6 @@ README_NEGATIVE = (
     "bad_ai-generated, simple_background, (worst_quality, bad_quality:1.2)"
 )
 
-# Minimal placeholder tags chosen directly from scene_background/README.md and verified against danbooru_tag.csv.
-BACKGROUND_THEME_TAGS = ["school", "classroom", "desk", "chair", "chalkboard", "window"]
-TIME_MOOD_TAGS = ["day", "sunlight", "clear_sky"]
 SEED = 260529001
 WIDTH = 1024
 HEIGHT = 576
@@ -53,28 +50,51 @@ def slugify(value: str) -> str:
     return slug or 'background'
 
 
-def choose_background_tags(asset_id: str, description: str) -> tuple[list[str], list[str]]:
-    text = f'{asset_id} {description}'.lower()
-    if any(word in text for word in ['cafe', 'coffee', 'café']):
-        theme = ['cafe', 'table', 'chair', 'window']
-        if any(word in text for word in ['rain', 'rainy', 'raining']):
-            theme.append('rain')
-        mood = ['night', 'indoors'] if any(word in text for word in ['night', 'midnight', 'after midnight']) else ['day', 'sunlight', 'indoors']
-        return theme, mood
-    if any(word in text for word in ['corridor', 'hallway', 'hall']):
-        theme = ['school', 'hallway', 'window']
-        mood = ['evening', 'indoors']
-        if any(word in text for word in ['rain', 'rainy', 'raining', 'storm', 'wet', 'puddle']):
-            theme.extend(['rain', 'wet', 'puddle', 'reflection'])
-            mood.extend(['overcast', 'dark'])
-        elif 'night' in text:
-            mood.append('night')
-        else:
-            mood.append('sunset')
-        return theme, mood
-    if 'classroom' in text:
-        return ['school', 'classroom', 'desk', 'chair', 'chalkboard', 'window'], ['evening', 'sunset', 'indoors'] if 'evening' in text else ['day', 'sunlight', 'clear_sky']
-    return BACKGROUND_THEME_TAGS, TIME_MOOD_TAGS
+def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    resolved = (path if path.is_absolute() else project_root / path).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f'Prompt slots path must be under {root}: {resolved}') from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise RuntimeError(f'Prompt slots file not found: {resolved}')
+    return resolved
+
+
+def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> Path | None:
+    root = (project_root / 'docs/production/prompt_slots').resolve()
+    candidates = []
+    if scene_id and asset_id:
+        candidates.append(root / f'{slugify(scene_id)}__{slugify(asset_id)}.json')
+    if asset_id:
+        candidates.append(root / f'{slugify(asset_id)}.json')
+    for path in candidates:
+        if path.exists() and path.is_file():
+            return path
+    return None
+
+
+def listify(value) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(',') if part.strip()]
+    if isinstance(value, list):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], dict]:
+    data = load_json(path)
+    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
+        raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
+    slots = data.get('prompt_slots') or {}
+    theme = listify(slots.get('background_theme'))
+    mood = listify(slots.get('time_mood'))
+    if not theme or not mood:
+        raise RuntimeError('UNROUTED_SCENE_BACKGROUND: agent-authored prompt_slots.background_theme and prompt_slots.time_mood are required')
+    return theme, mood, data
 
 
 def load_json(path: Path):
@@ -153,6 +173,7 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 600) -> dict:
 
 
 def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
+    root = output_root.resolve()
     paths = []
     for node_out in history.get("outputs", {}).values():
         for img in node_out.get("images", []) if isinstance(node_out, dict) else []:
@@ -160,7 +181,12 @@ def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
             subfolder = img.get("subfolder", "") or ""
             typ = img.get("type", "output")
             if filename and typ == "output":
-                paths.append(output_root / subfolder / filename)
+                candidate = (root / subfolder / filename).resolve()
+                try:
+                    candidate.relative_to(root)
+                except ValueError:
+                    continue
+                paths.append(candidate)
     return paths
 
 
@@ -170,11 +196,18 @@ def main() -> int:
     parser.add_argument('--asset-id', default='')
     parser.add_argument('--description', default='')
     parser.add_argument('--scene-id', default='')
+    parser.add_argument('--seed', type=int, default=SEED, help='Sampler seed; override for rerolls while preserving prompt contract.')
+    parser.add_argument('--prompt-slots', help='Agent-authored prompt slots JSON. Required for production scene_background generation.')
+    parser.add_argument('--prepare-only', action='store_true', help='Patch workflow and write metadata without submitting to ComfyUI.')
+    parser.add_argument('--out-metadata', help='Metadata path for prepare-only/tests. Defaults to run_dir/metadata.json.')
     args = parser.parse_args()
     project_root = Path(args.project_root)
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
-    background_theme_tags, time_mood_tags = choose_background_tags(args.asset_id, args.description)
+    prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
+    if prompt_slots_path is None:
+        raise RuntimeError('UNROUTED_SCENE_BACKGROUND: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    background_theme_tags, time_mood_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_background', args.asset_id)
 
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
@@ -188,7 +221,6 @@ def main() -> int:
     if missing:
         raise RuntimeError(f"CSV tag validation failed for placeholder tags: {missing}")
 
-    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
@@ -207,7 +239,7 @@ def main() -> int:
     workflow["4"]["inputs"]["text"] = negative
     workflow["5"]["inputs"]["width"] = WIDTH
     workflow["5"]["inputs"]["height"] = HEIGHT
-    workflow["6"]["inputs"]["seed"] = SEED
+    workflow["6"]["inputs"]["seed"] = args.seed
     workflow["6"]["inputs"]["steps"] = STEPS
     workflow["6"]["inputs"]["cfg"] = CFG
     workflow["8"]["inputs"]["filename_prefix"] = filename_prefix
@@ -218,15 +250,54 @@ def main() -> int:
     patched_workflow_path.write_text(json.dumps(workflow, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("RUN_ID", run_id)
-    print("ENDPOINT", endpoint)
     print("WORKFLOW", str(workflow_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README wrapper + minimal CSV-verified placeholder tags only")
+    print("PROMPT_POLICY", "README wrapper + agent-authored CSV-verified prompt slots")
+    print("PROMPT_SLOTS", str(prompt_slots_path))
     print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE", negative)
-    print("SEED", SEED)
+    print("SEED", args.seed)
 
+    metadata = {
+        "run_id": run_id,
+        "asset_id": args.asset_id,
+        "scene_id": args.scene_id,
+        "description": args.description,
+        "asset_type": "background",
+        "workflow_id": "scene_background",
+        "workflow_path": str(workflow_path),
+        "workflow_sha256": workflow_sha,
+        "patched_workflow_path": str(patched_workflow_path),
+        "prompt_source": "agent_authored_prompt_slots",
+        "prompt_slots_path": str(prompt_slots_path),
+        "prompt_slots": prompt_slots_data,
+        "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots",
+        "csv_placeholder_tags": placeholder_tags,
+        "positive_prompt": positive,
+        "negative_prompt": negative,
+        "seed": args.seed,
+        "width": WIDTH,
+        "height": HEIGHT,
+        "steps": STEPS,
+        "cfg": CFG,
+        "output_paths": [],
+        "candidate_copies": [],
+        "qa_status": "pending_generation",
+        "promotion_status": "not_promoted",
+    }
+    metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / "metadata.json"
+
+    if args.prepare_only:
+        metadata["prepare_only"] = True
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("METADATA", str(metadata_path))
+        print("PREPARE_ONLY")
+        return 0
+
+    endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
+    metadata["endpoint"] = endpoint
+    print("ENDPOINT", endpoint)
     prompt_id = submit_prompt(endpoint, workflow)
     print("PROMPT_ID", prompt_id)
     history = wait_history(endpoint, prompt_id)
@@ -246,33 +317,11 @@ def main() -> int:
             copied_paths.append(dst)
             print("CANDIDATE_COPY", str(dst))
 
-    metadata = {
-        "run_id": run_id,
-        "asset_id": args.asset_id,
-        "scene_id": args.scene_id,
-        "description": args.description,
-        "asset_type": "background",
-        "workflow_id": "scene_background",
-        "workflow_path": str(workflow_path),
-        "workflow_sha256": workflow_sha,
-        "patched_workflow_path": str(patched_workflow_path),
-        "endpoint": endpoint,
-        "prompt_id": prompt_id,
-        "prompt_policy": "README wrapper + minimal CSV-verified placeholder tags only",
-        "csv_placeholder_tags": placeholder_tags,
-        "positive_prompt": positive,
-        "negative_prompt": negative,
-        "seed": SEED,
-        "width": WIDTH,
-        "height": HEIGHT,
-        "steps": STEPS,
-        "cfg": CFG,
-        "output_paths": [str(p) for p in output_paths],
-        "candidate_copies": [str(p) for p in copied_paths],
-        "qa_status": "pending_visual_review",
-        "promotion_status": "not_promoted",
-    }
-    metadata_path = run_dir / "metadata.json"
+    metadata["prompt_id"] = prompt_id
+    metadata["output_paths"] = [str(p) for p in output_paths]
+    metadata["candidate_copies"] = [str(p) for p in copied_paths]
+    metadata["qa_status"] = "pending_visual_review"
+    metadata["promotion_status"] = "not_promoted_pending_owner_approval"
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
     print("METADATA", str(metadata_path))
 
