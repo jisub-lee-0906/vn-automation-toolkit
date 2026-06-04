@@ -11,6 +11,29 @@ SCRIPT = ROOT / 'tools/promote_asset_candidate.py'
 METADATA = ROOT / 'docs/automation/generation_runs/scene_event_cg_readme_positive_only_20260530_072325/metadata.json'
 
 
+def make_promote_project(tmp_path: Path, *, with_qa: bool = False, qa_status: str = 'pass') -> tuple[Path, Path, Path | None]:
+    project = tmp_path / 'project'
+    (project / 'game/data').mkdir(parents=True, exist_ok=True)
+    (project / 'game/data/asset_manifest.json').write_text(json.dumps({'assets': []}), encoding='utf-8')
+    candidate = project / 'docs/automation/generated_candidates/candidate.png'
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b'candidate')
+    metadata = project / 'docs/automation/generation_runs/test/metadata.json'
+    metadata.parent.mkdir(parents=True, exist_ok=True)
+    qa = None
+    payload = {
+        'asset_type': 'background',
+        'candidate_copies': [str(candidate)],
+        'qa_status': 'qa_pass_candidate_not_promoted',
+    }
+    if with_qa:
+        qa = project / 'docs/automation/qa_reports/candidate_qa.json'
+        qa.parent.mkdir(parents=True, exist_ok=True)
+        qa.write_text(json.dumps({'status': qa_status}), encoding='utf-8')
+    metadata.write_text(json.dumps(payload), encoding='utf-8')
+    return project, metadata, qa
+
+
 def run_promote(*args: str):
     return subprocess.run([sys.executable, str(SCRIPT), str(METADATA), *args], cwd=ROOT, text=True, capture_output=True)
 
@@ -29,14 +52,35 @@ def test_promote_refuses_missing_approved_even_with_required_args():
     assert 'missing --approved explicit approval flag' in proc.stdout
 
 
+def test_promote_refuses_missing_qa_report_even_when_approved(tmp_path: Path):
+    project, metadata, _qa = make_promote_project(tmp_path)
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT), str(metadata),
+            '--project-root', str(project),
+            '--asset-id', 'test_refuse_missing_qa',
+            '--renpy-name', 'test_refuse_missing_qa',
+            '--approved',
+        ],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    assert proc.returncode == 2
+    assert 'missing --qa-report passing QA evidence' in proc.stdout
+
+
 def test_promote_refuses_failing_qa_report(tmp_path: Path):
-    qa = tmp_path / 'qa_fail.json'
-    qa.write_text(json.dumps({'status': 'fail', 'errors': ['file_empty']}), encoding='utf-8')
-    proc = run_promote(
-        '--asset-id', 'test_refuse_bad_qa',
-        '--renpy-name', 'test_refuse_bad_qa',
-        '--approved',
-        '--qa-report', str(qa),
+    project, metadata, qa = make_promote_project(tmp_path, with_qa=True, qa_status='fail')
+    assert qa is not None
+    proc = subprocess.run(
+        [
+            sys.executable, str(SCRIPT), str(metadata),
+            '--project-root', str(project),
+            '--asset-id', 'test_refuse_bad_qa',
+            '--renpy-name', 'test_refuse_bad_qa',
+            '--approved',
+            '--qa-report', str(qa),
+        ],
+        cwd=ROOT, text=True, capture_output=True,
     )
     assert proc.returncode == 2
     assert 'QA report status is not pass' in proc.stdout

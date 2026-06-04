@@ -54,6 +54,41 @@ def first_existing_candidate(metadata: dict) -> Path:
     raise FileNotFoundError('No existing candidate file found in metadata candidate_copies/output_paths')
 
 
+def discover_pass_qa_report(metadata: dict, metadata_path: Path) -> Path | None:
+    """Return a saved passing QA report recorded in metadata, if present.
+
+    Promotion still needs concrete QA evidence. Director/Telegram approval flows may
+    pass the path explicitly, but generated queue metadata can also carry the saved
+    report path. A bare `qa_status=qa_pass_candidate_not_promoted` is not enough.
+    """
+    candidates: list[str] = []
+    for key in ['qa_report', 'qa_report_path']:
+        raw = metadata.get(key)
+        if raw:
+            candidates.append(str(raw))
+    for item in metadata.get('qa_reports') or []:
+        if isinstance(item, dict):
+            raw = item.get('report_path') or item.get('path') or item.get('qa_report')
+            if item.get('status') not in (None, 'pass'):
+                continue
+            if raw:
+                candidates.append(str(raw))
+        elif item:
+            candidates.append(str(item))
+    for raw in candidates:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = metadata_path.parent / path
+        if path.exists():
+            try:
+                report = load_json(path)
+            except Exception:
+                continue
+            if report.get('status') == 'pass':
+                return path
+    return None
+
+
 def default_dest_dir(game_dir: Path, asset_type: str, character_id: str | None) -> Path:
     template = DEST_BY_TYPE.get(asset_type) or DEST_BY_TYPE.get(asset_type.replace('scene_', ''), 'images/generated/promoted')
     if '{character_id}' in template:
@@ -113,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--filename', help='Promoted filename override; defaults to source filename')
     parser.add_argument('--scene-usage', action='append', default=[])
     parser.add_argument('--approved', action='store_true', help='Required explicit human/owner approval gate')
-    parser.add_argument('--qa-report', help='Optional qa_asset_file.py JSON report; refused unless status is pass')
+    parser.add_argument('--qa-report', help='Required qa_asset_file.py JSON report; refused unless status is pass')
     parser.add_argument('--project-root', default=None, help='RenPy/VN project root; defaults to repo root or VN_AUTOMATION_PROJECT_ROOT')
     parser.add_argument('--contract', help='Optional project_contract.json path')
     parser.add_argument('--force-overwrite', action='store_true', help='Allow overwriting an existing promoted destination file.')
@@ -127,19 +162,6 @@ def main(argv: list[str] | None = None) -> int:
     if not args.approved:
         print('PROMOTE_REFUSED: missing --approved explicit approval flag')
         return 2
-
-    qa_report_path = None
-    if args.qa_report:
-        qa_report_path = Path(args.qa_report)
-        if not qa_report_path.exists():
-            print(f'PROMOTE_REFUSED: QA report not found: {qa_report_path}')
-            return 2
-        qa_report = load_json(qa_report_path)
-        if qa_report.get('status') != 'pass':
-            print('PROMOTE_REFUSED: QA report status is not pass')
-            print('qa_report', qa_report_path)
-            print('qa_status', qa_report.get('status'))
-            return 2
 
     metadata_path = Path(args.metadata)
     if not metadata_path.exists():
@@ -168,6 +190,20 @@ def main(argv: list[str] | None = None) -> int:
         if item.get('asset_id') == args.asset_id and not args.replace_existing:
             print(f'PROMOTE_REFUSED: manifest asset_id already exists: {args.asset_id} (use --replace-existing to update it)')
             return 2
+
+    qa_report_path = Path(args.qa_report) if args.qa_report else discover_pass_qa_report(metadata, metadata_path)
+    if not qa_report_path:
+        print('PROMOTE_REFUSED: missing --qa-report passing QA evidence')
+        return 2
+    if not qa_report_path.exists():
+        print(f'PROMOTE_REFUSED: QA report not found: {qa_report_path}')
+        return 2
+    qa_report = load_json(qa_report_path)
+    if qa_report.get('status') != 'pass':
+        print('PROMOTE_REFUSED: QA report status is not pass')
+        print('qa_report', qa_report_path)
+        print('qa_status', qa_report.get('status'))
+        return 2
 
     shutil.copy2(src, dest)
 

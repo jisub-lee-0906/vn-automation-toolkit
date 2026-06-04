@@ -28,6 +28,13 @@ def seed_candidate(project: Path, asset_id: str = 'bg_library_rainy_night') -> P
     candidate.write_bytes(b'fake png candidate for director UX tests')
     run_dir = project / 'docs/automation/generation_runs' / f'scene_background_{asset_id}_demo'
     run_dir.mkdir(parents=True, exist_ok=True)
+    qa_report = project / 'docs/automation/qa_reports' / f'{asset_id}_candidate_a_qa.json'
+    qa_report.parent.mkdir(parents=True, exist_ok=True)
+    qa_report.write_text(json.dumps({
+        'status': 'pass',
+        'checked_path': str(candidate),
+        'asset_type': 'background',
+    }, ensure_ascii=False, indent=2), encoding='utf-8')
     metadata = {
         'run_id': f'scene_background_{asset_id}_demo',
         'asset_id': asset_id,
@@ -36,6 +43,7 @@ def seed_candidate(project: Path, asset_id: str = 'bg_library_rainy_night') -> P
         'positive_prompt': f'{asset_id} rainy night library interior no characters',
         'candidate_copies': [str(candidate)],
         'qa_status': 'qa_pass_candidate_not_promoted',
+        'qa_reports': [{'status': 'pass', 'report_path': str(qa_report)}],
         'promotion_status': 'not_promoted_pending_owner_approval',
         'seed': 1234,
     }

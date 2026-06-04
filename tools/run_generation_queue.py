@@ -63,6 +63,7 @@ def collect_generate_items(project_root: Path, resolved_glob: str) -> list[dict[
                 'workflow_id': item.get('recommended_workflow_id'),
                 'prompt_slots_path': item.get('prompt_slots_path'),
                 'prompt_slots': item.get('prompt_slots'),
+                'source_char_base_metadata': item.get('source_char_base_metadata') or item.get('char_base_metadata') or item.get('char_base_metadata_path'),
             })
     return items
 
@@ -148,6 +149,15 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> di
     ]
     if prompt_slots_path is not None:
         command += ['--prompt-slots', str(prompt_slots_path)]
+    if workflow_id == 'scene_event_cg':
+        source_char_base_metadata = item.get('source_char_base_metadata')
+        if not source_char_base_metadata:
+            return {
+                **item,
+                'status': 'failed_missing_source_char_base_metadata',
+                'reason': 'scene_event_cg_requires_source_char_base_metadata',
+            }
+        command += ['--char-base-metadata', str(source_char_base_metadata)]
     proc = subprocess.run(command, cwd=project_root, text=True, capture_output=True, timeout=900)
     result: dict[str, Any] = {
         **item,
@@ -174,6 +184,11 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> di
     result['run_id'] = run_id
     result['candidate_copies'] = metadata.get('candidate_copies', [])
     result['qa_reports'] = qa_candidate_files(project_root, metadata, item.get('asset_type'), run_id)
+    if result['qa_reports']:
+        metadata['qa_reports'] = result['qa_reports']
+        first_pass = next((q for q in result['qa_reports'] if q.get('status') == 'pass'), None)
+        if first_pass:
+            metadata['qa_report'] = first_pass.get('path')
     if result['qa_reports'] and all(q['status'] == 'pass' for q in result['qa_reports']):
         metadata['qa_status'] = 'qa_pass_candidate_not_promoted'
     elif result['qa_reports']:

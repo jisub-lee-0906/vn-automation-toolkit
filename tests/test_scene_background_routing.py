@@ -31,12 +31,24 @@ def test_load_agent_authored_background_prompt_slots(tmp_path: Path):
         'prompt_slots': {
             'background_theme': ['bus_interior', 'vehicle_interior', 'bus', 'chair', 'window', 'rain', 'wet', 'reflection'],
             'time_mood': ['indoors', 'dawn'],
+            'negative_tags': ['train_interior'],
+            'negative_rationale': {'train_interior': 'avoid rail-transit misread'},
+        },
+        'visual_brief': 'Dawn city bus interior with no people.',
+        'tag_rationale': {
+            'bus_interior': 'primary semantic anchor',
+            'chair': 'broad supporting cue only',
         },
     }), encoding='utf-8')
 
-    theme, mood, data = runner.load_prompt_slots(path, 'scene_background', 'bg_bus_interior_dawn')
+    theme, mood, negative_tags, data = runner.load_prompt_slots(path, 'scene_background', 'bg_bus_interior_dawn')
 
     assert 'bus_interior' in theme
     assert 'classroom' not in theme
     assert mood == ['indoors', 'dawn']
+    assert negative_tags == ['train_interior']
     assert data['asset_id'] == 'bg_bus_interior_dawn'
+    notes = runner.prompt_context_notes(data)
+    assert notes['visual_brief'] == 'Dawn city bus interior with no people.'
+    assert notes['tag_rationale']['bus_interior'] == 'primary semantic anchor'
+    assert notes['negative_rationale']['train_interior'] == 'avoid rail-transit misread'

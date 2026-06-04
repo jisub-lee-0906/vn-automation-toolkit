@@ -29,7 +29,7 @@ def write_text(path: Path, text: str):
     path.write_text(text, encoding='utf-8')
 
 
-def make_project(tmp_path: Path) -> tuple[Path, Path]:
+def make_project(tmp_path: Path, *, sqlite_only: bool = False) -> tuple[Path, Path]:
     project = tmp_path / 'project'
     workflow_pack = tmp_path / 'workflow_pack'
     write_json(project / 'docs/automation/project_contract.json', {
@@ -44,12 +44,23 @@ def make_project(tmp_path: Path) -> tuple[Path, Path]:
         '6': {'inputs': {'seed': 0, 'steps': 0, 'cfg': 0}},
         '8': {'inputs': {'filename_prefix': 'old'}},
     })
-    write_text(workflow_pack / 'danbooru_tag.csv', '\n'.join([
+    tags = [
         'bus_interior', 'vehicle_interior', 'bus', 'chair', 'window',
-        'rain', 'wet', 'reflection', 'road', 'street', 'indoors', 'dawn',
+        'rain', 'wet', 'reflection', 'road', 'street', 'indoors', 'dawn', 'train_interior',
         'school', 'classroom', 'desk', 'chalkboard', 'day', 'sunlight', 'clear_sky',
         'medium_hair', 'straight_hair', 'brown_hair', 'brown_eyes', 'white_shirt', 'blue_skirt',
-    ]))
+    ]
+    if sqlite_only:
+        import sqlite3
+        db = workflow_pack / 'danbooru-taxonomy.release.sqlite'
+        db.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(db) as conn:
+            conn.execute('CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT, normalized_name TEXT, display_name TEXT, category_name TEXT, post_count INTEGER, is_deprecated INTEGER)')
+            conn.execute('CREATE TABLE tag_aliases (alias_normalized_name TEXT, target_tag_id INTEGER, status TEXT)')
+            for i, tag in enumerate(tags, start=1):
+                conn.execute('INSERT INTO tags VALUES (?, ?, ?, ?, ?, ?, 0)', (i, tag, tag, tag.replace('_', ' '), 'general', 1000 - i))
+    else:
+        write_text(workflow_pack / 'danbooru_tag.csv', '\n'.join(tags))
     return project, workflow_pack
 
 
@@ -91,7 +102,11 @@ def test_scene_background_prepare_only_uses_agent_authored_prompt_slots_not_clas
         'prompt_slots': {
             'background_theme': ['bus_interior', 'vehicle_interior', 'bus', 'chair', 'window', 'rain', 'wet', 'reflection', 'road', 'street'],
             'time_mood': ['indoors', 'dawn'],
+            'negative_tags': ['train_interior'],
         },
+        'visual_brief': 'Dawn first-bus interior, empty and rain-wet through the windows.',
+        'tag_rationale': {'bus_interior': 'primary class anchor'},
+        'negative_rationale': {'train_interior': 'avoid subway/train interior confusion'},
         'semantic_requirements': ['dawn first-bus interior', 'no people', 'no readable text'],
     })
     meta = tmp_path / 'metadata.json'
@@ -111,10 +126,48 @@ def test_scene_background_prepare_only_uses_agent_authored_prompt_slots_not_clas
     data = json.loads(meta.read_text(encoding='utf-8'))
     assert data['prompt_source'] == 'agent_authored_prompt_slots'
     assert 'bus_interior' in data['csv_placeholder_tags']
+    assert 'train_interior' in data['csv_negative_tags']
+    assert data['prompt_context_notes']['visual_brief'] == 'Dawn first-bus interior, empty and rain-wet through the windows.'
+    assert data['prompt_context_notes']['tag_rationale']['bus_interior'] == 'primary class anchor'
+    assert data['prompt_context_notes']['negative_rationale']['train_interior'] == 'avoid subway/train interior confusion'
     assert 'classroom' not in data['csv_placeholder_tags']
     patched = json.loads(Path(data['patched_workflow_path']).read_text(encoding='utf-8'))
     assert 'bus_interior' in patched['3']['inputs']['text']
+    assert 'train_interior' in patched['4']['inputs']['text']
     assert 'classroom' not in patched['3']['inputs']['text']
+
+
+def test_scene_background_prepare_only_uses_sqlite_taxonomy_when_root_csv_removed(tmp_path: Path):
+    project, workflow_pack = make_project(tmp_path, sqlite_only=True)
+    assert not (workflow_pack / 'danbooru_tag.csv').exists()
+    slots = project / 'docs/production/prompt_slots/bg_bus_interior_dawn.json'
+    write_json(slots, {
+        'workflow_id': 'scene_background',
+        'asset_id': 'bg_bus_interior_dawn',
+        'prompt_slots': {
+            'background_theme': ['bus_interior', 'vehicle_interior', 'bus'],
+            'time_mood': ['indoors', 'dawn'],
+            'negative_tags': ['train_interior'],
+        },
+    })
+    meta = tmp_path / 'metadata_sqlite.json'
+
+    proc = subprocess.run([
+        sys.executable, str(BG_SCRIPT),
+        '--project-root', str(project),
+        '--asset-id', 'bg_bus_interior_dawn',
+        '--prompt-slots', str(slots),
+        '--prepare-only',
+        '--out-metadata', str(meta),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(meta.read_text(encoding='utf-8'))
+    assert data['prompt_policy'] == 'README wrapper + agent-authored SQLite-verified prompt slots'
+    assert data['taxonomy_db_path'].endswith('danbooru-taxonomy.release.sqlite')
+    assert data['taxonomy_placeholder_tags'] == ['bus_interior', 'vehicle_interior', 'bus', 'indoors', 'dawn']
+    assert data['taxonomy_negative_tags'] == ['train_interior']
+    assert all(item['source'] == 'db' for item in data['taxonomy_validation'].values())
 
 
 def test_audio_generation_queue_fails_closed_without_prompt_slots(tmp_path: Path):
@@ -206,3 +259,73 @@ def test_char_base_prepare_only_requires_agent_authored_prompt_slots(tmp_path: P
     patched = json.loads(Path(data['patched_workflow_path']).read_text(encoding='utf-8'))
     assert 'brown_hair' in patched['3']['inputs']['text']
     assert 'school_uniform' not in patched['3']['inputs']['text']
+
+
+def test_char_base_prepare_only_uses_sqlite_taxonomy_when_root_csv_removed(tmp_path: Path):
+    char_script = ROOT / 'tools/run_char_base_smoke.py'
+    project, workflow_pack = make_project(tmp_path, sqlite_only=True)
+    write_json(workflow_pack / 'char_base/char_base_workflow_api.json', {
+        '3': {'inputs': {'text': 'old positive'}},
+        '4': {'inputs': {'text': 'old negative'}},
+        '5': {'inputs': {'width': 0, 'height': 0}},
+        '6': {'inputs': {'seed': 0, 'steps': 0, 'cfg': 0}},
+        '8': {'inputs': {'filename_prefix': 'old'}},
+    })
+    slots = project / 'docs/production/prompt_slots/char_seoha_base.json'
+    write_json(slots, {
+        'workflow_id': 'char_base',
+        'asset_id': 'char_seoha_base',
+        'prompt_slots': {
+            'character_features': ['medium_hair', 'straight_hair', 'brown_hair', 'brown_eyes'],
+            'outfit_detail': ['white_shirt', 'blue_skirt'],
+        },
+    })
+    meta = tmp_path / 'char_meta_sqlite.json'
+
+    proc = subprocess.run([
+        sys.executable, str(char_script),
+        '--project-root', str(project),
+        '--asset-id', 'char_seoha_base',
+        '--prompt-slots', str(slots),
+        '--prepare-only',
+        '--out-metadata', str(meta),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(meta.read_text(encoding='utf-8'))
+    assert data['prompt_policy'] == 'README wrapper + agent-authored SQLite-verified prompt slots only'
+    assert data['taxonomy_placeholder_tags'] == ['medium_hair', 'straight_hair', 'brown_hair', 'brown_eyes', 'white_shirt', 'blue_skirt']
+    assert data['taxonomy_db_path'].endswith('danbooru-taxonomy.release.sqlite')
+
+
+def test_scene_event_cg_refuses_missing_source_char_base_metadata(tmp_path: Path):
+    event_script = ROOT / 'tools/run_scene_event_cg_smoke.py'
+    project, workflow_pack = make_project(tmp_path, sqlite_only=True)
+    write_json(workflow_pack / 'scene_event_cg/scene_event_cg_workflow_api.json', {
+        '9': {'inputs': {'text': 'old positive'}},
+        '10': {'inputs': {'text': 'old negative'}},
+        '11': {'inputs': {'width': 0, 'height': 0}},
+        '12': {'inputs': {'seed': 0, 'steps': 0, 'cfg': 0, 'denoise': 0}},
+        '14': {'inputs': {'filename_prefix': 'old'}},
+        '100': {'inputs': {'lora_name': '', 'strength_model': 0, 'strength_clip': 0}},
+    })
+    slots = project / 'docs/production/prompt_slots/event_test.json'
+    write_json(slots, {
+        'workflow_id': 'scene_event_cg',
+        'asset_id': 'event_test',
+        'prompt_slots': {
+            'character_features': ['medium_hair', 'brown_hair'],
+            'outfit_detail': ['white_shirt', 'blue_skirt'],
+            'scene_context': ['indoors', 'dawn'],
+        },
+    })
+
+    proc = subprocess.run([
+        sys.executable, str(event_script),
+        '--project-root', str(project),
+        '--asset-id', 'event_test',
+        '--prompt-slots', str(slots),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 1
+    assert 'SCENE_EVENT_CG_SOURCE_REQUIRED' in proc.stdout + proc.stderr

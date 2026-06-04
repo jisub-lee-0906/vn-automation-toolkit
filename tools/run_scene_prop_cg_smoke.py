@@ -3,13 +3,12 @@
 
 Prompt discipline:
 - Keep positive/negative wrapper from scene_prop_cg/README.md.
-- Fill only README placeholders with minimal tags verified in danbooru_tag.csv.
+- Fill only README placeholders with minimal tags verified in the workflow-pack Danbooru taxonomy oracle.
 - Do not modify canonical workflow JSON; write a patched runtime copy under docs/automation/generation_runs/.
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import re
@@ -21,6 +20,8 @@ import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from danbooru_taxonomy import validate_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -102,16 +103,6 @@ def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
-
-def collect_csv_tags(csv_path: Path) -> set[str]:
-    tags: set[str] = set()
-    with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
-        for row in csv.reader(f):
-            for cell in row[:2]:
-                s = cell.strip()
-                if s:
-                    tags.add(s)
-    return tags
 
 
 def url_json(url: str, timeout: float = 5.0):
@@ -217,13 +208,9 @@ def main() -> int:
     workflow_root = Path(contract["workflow_pack_root"])
     output_root = Path(contract["comfyui_output_root"])
     workflow_path = workflow_root / "scene_prop_cg/scene_prop_cg_workflow_api.json"
-    csv_path = workflow_root / "danbooru_tag.csv"
 
-    tags = collect_csv_tags(csv_path)
     placeholder_tags = item_form_tags + material_detail_tags + placement_background_tags
-    missing = [t for t in placeholder_tags if t not in tags]
-    if missing:
-        raise RuntimeError(f"CSV tag validation failed for placeholder tags: {missing}")
+    taxonomy_validation, taxonomy_meta = validate_tags(workflow_root, placeholder_tags)
 
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
@@ -257,9 +244,10 @@ def main() -> int:
     print("RUN_ID", run_id)
     print("WORKFLOW", str(workflow_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README wrapper + agent-authored CSV-verified prompt slots")
+    print("PROMPT_POLICY", "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots")
     print("PROMPT_SLOTS", str(prompt_slots_path))
-    print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
+    print("TAXONOMY_SOURCE", taxonomy_meta['taxonomy_source'])
+    print("TAXONOMY_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE", negative)
     print("SEED", seed)
@@ -300,7 +288,13 @@ def main() -> int:
         "prompt_source": "agent_authored_prompt_slots",
         "prompt_slots_path": str(prompt_slots_path),
         "prompt_slots": prompt_slots_data,
-        "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots",
+        "prompt_policy": "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots",
+        "taxonomy_source": taxonomy_meta['taxonomy_source'],
+        "taxonomy_db_path": taxonomy_meta['taxonomy_db_path'],
+        "legacy_csv_path": taxonomy_meta['legacy_csv_path'],
+        "legacy_csv_used": taxonomy_meta['legacy_csv_used'],
+        "taxonomy_placeholder_tags": placeholder_tags,
+        "taxonomy_validation": taxonomy_validation,
         "csv_placeholder_tags": placeholder_tags,
         "positive_prompt": positive,
         "negative_prompt": negative,

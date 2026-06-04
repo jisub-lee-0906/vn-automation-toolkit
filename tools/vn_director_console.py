@@ -290,11 +290,26 @@ def infer_renpy_name(asset_id: str, asset_type: str) -> str:
     return f"{asset_type} {asset_id}".replace('background ', 'bg ')
 
 
+def candidate_qa_report_path(candidate: dict[str, Any]) -> str:
+    raw = candidate.get('qa_report')
+    if raw:
+        return str(raw)
+    for item in candidate.get('qa_reports') or []:
+        if isinstance(item, dict) and item.get('status') in (None, 'pass'):
+            raw = item.get('report_path') or item.get('path') or item.get('qa_report')
+            if raw:
+                return str(raw)
+        elif item:
+            return str(item)
+    return ''
+
+
 def approve_command(project_root: Path, item: dict[str, Any], candidate: dict[str, Any], index: int) -> str:
     metadata = candidate.get('metadata_path', '')
     asset_id = item.get('asset_id', '')
     asset_type = item.get('asset_type', '')
     renpy_name = infer_renpy_name(str(asset_id), str(asset_type))
+    qa_report = candidate_qa_report_path(candidate)
     parts = [
         'vn-auto director approve-candidate',
         f'--project-root "{project_root}"',
@@ -303,8 +318,10 @@ def approve_command(project_root: Path, item: dict[str, Any], candidate: dict[st
         f'--asset-type {asset_type}',
         f'--renpy-name "{renpy_name}"',
         f'--scene-usage {item.get("scene_id", "")}',
-        '--approved',
     ]
+    if qa_report:
+        parts.append(f'--qa-report "{qa_report}"')
+    parts.append('--approved')
     return ' '.join(parts)
 
 

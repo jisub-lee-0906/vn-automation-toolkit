@@ -3,13 +3,12 @@
 
 Prompt discipline:
 - Keep the positive/negative wrapper from scene_background/README.md.
-- Fill only the README placeholders with minimal tags verified in danbooru_tag.csv.
+- Fill only the README placeholders with minimal tags verified in the workflow-pack Danbooru taxonomy oracle.
 - Do not modify the canonical workflow JSON; write a patched runtime copy under docs/automation/generation_runs/.
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import re
@@ -21,6 +20,8 @@ import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from danbooru_taxonomy import validate_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -37,6 +38,14 @@ README_NEGATIVE = (
     "lowres, cropped, very_displeasing, sketch, jpeg_artifacts, signature, watermark, username, "
     "bad_ai-generated, simple_background, (worst_quality, bad_quality:1.2)"
 )
+
+PROMPT_CONTEXT_KEYS = [
+    "visual_brief",
+    "tag_rationale",
+    "negative_rationale",
+    "semantic_failure_notes",
+    "reroll_or_prompt_change_reason",
+]
 
 SEED = 260529001
 WIDTH = 1024
@@ -83,7 +92,7 @@ def listify(value) -> list[str]:
     return []
 
 
-def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], dict]:
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], list[str], dict]:
     data = load_json(path)
     if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
         raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
@@ -92,24 +101,33 @@ def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list
     slots = data.get('prompt_slots') or {}
     theme = listify(slots.get('background_theme'))
     mood = listify(slots.get('time_mood'))
+    negative_tags = listify(slots.get('negative_tags'))
     if not theme or not mood:
         raise RuntimeError('UNROUTED_SCENE_BACKGROUND: agent-authored prompt_slots.background_theme and prompt_slots.time_mood are required')
-    return theme, mood, data
+    return theme, mood, negative_tags, data
+
+
+def prompt_context_notes(prompt_slots_data: dict) -> dict:
+    """Return agent-authored prompt context notes without affecting generation.
+
+    These fields are intentionally metadata-only. They preserve why the agent
+    chose the tags, negatives, or reroll/prompt-change direction, while keeping
+    the runner from inventing creative routing from descriptions.
+    """
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    notes = {}
+    for key in PROMPT_CONTEXT_KEYS:
+        if key in prompt_slots_data:
+            notes[key] = prompt_slots_data[key]
+        elif key in slots:
+            notes[key] = slots[key]
+    return notes
 
 
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
-
-def collect_csv_tags(csv_path: Path) -> set[str]:
-    tags: set[str] = set()
-    with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
-        for row in csv.reader(f):
-            for cell in row[:2]:
-                s = cell.strip()
-                if s:
-                    tags.add(s)
-    return tags
 
 
 def url_json(url: str, timeout: float = 5.0):
@@ -172,8 +190,8 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 600) -> dict:
     raise TimeoutError(f"history did not complete within {timeout_s}s for {prompt_id}")
 
 
-def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
-    root = output_root.resolve()
+def image_paths_from_history(history: dict, output_roots: list[Path]) -> list[Path]:
+    roots = [root.resolve() for root in output_roots]
     paths = []
     for node_out in history.get("outputs", {}).values():
         for img in node_out.get("images", []) if isinstance(node_out, dict) else []:
@@ -181,13 +199,31 @@ def image_paths_from_history(history: dict, output_root: Path) -> list[Path]:
             subfolder = img.get("subfolder", "") or ""
             typ = img.get("type", "output")
             if filename and typ == "output":
-                candidate = (root / subfolder / filename).resolve()
-                try:
-                    candidate.relative_to(root)
-                except ValueError:
-                    continue
-                paths.append(candidate)
+                for root in roots:
+                    candidate = (root / subfolder / filename).resolve()
+                    try:
+                        candidate.relative_to(root)
+                    except ValueError:
+                        continue
+                    if candidate.exists():
+                        paths.append(candidate)
+                        break
+                else:
+                    # Keep the contract-root path for diagnostics even if a live
+                    # ComfyUI package wrote elsewhere; callers verify existence.
+                    paths.append((roots[0] / subfolder / filename).resolve())
     return paths
+
+
+def candidate_output_roots(contract: dict) -> list[Path]:
+    roots = [Path(contract["comfyui_output_root"])]
+    # Windows ComfyUI desktop/package installs can ignore a desired output root
+    # and write under the package cwd. Keep this fallback so future sessions do
+    # not lose successful history outputs just because the contract root differs.
+    packaged = Path("C:/Users/Desktop/AppData/Local/Programs/ComfyUI/resources/ComfyUI/output")
+    if packaged not in roots:
+        roots.append(packaged)
+    return roots
 
 
 def main() -> int:
@@ -207,19 +243,16 @@ def main() -> int:
     prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
     if prompt_slots_path is None:
         raise RuntimeError('UNROUTED_SCENE_BACKGROUND: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
-    background_theme_tags, time_mood_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_background', args.asset_id)
+    background_theme_tags, time_mood_tags, negative_slot_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_background', args.asset_id)
 
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
-    output_root = Path(contract["comfyui_output_root"])
+    output_roots = candidate_output_roots(contract)
     workflow_path = workflow_root / "scene_background/scene_background_workflow_api.json"
-    csv_path = workflow_root / "danbooru_tag.csv"
 
-    tags = collect_csv_tags(csv_path)
     placeholder_tags = background_theme_tags + time_mood_tags
-    missing = [t for t in placeholder_tags if t not in tags]
-    if missing:
-        raise RuntimeError(f"CSV tag validation failed for placeholder tags: {missing}")
+    tags_to_validate = placeholder_tags + negative_slot_tags
+    taxonomy_validation, taxonomy_meta = validate_tags(workflow_root, tags_to_validate)
 
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
@@ -229,6 +262,8 @@ def main() -> int:
         time_mood=", ".join(time_mood_tags),
     )
     negative = README_NEGATIVE
+    if negative_slot_tags:
+        negative = negative + ', ' + ', '.join(negative_slot_tags)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     request_slug = slugify(args.asset_id or args.scene_id or 'background')
@@ -252,9 +287,10 @@ def main() -> int:
     print("RUN_ID", run_id)
     print("WORKFLOW", str(workflow_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README wrapper + agent-authored CSV-verified prompt slots")
+    print("PROMPT_POLICY", "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots")
     print("PROMPT_SLOTS", str(prompt_slots_path))
-    print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
+    print("TAXONOMY_SOURCE", taxonomy_meta['taxonomy_source'])
+    print("TAXONOMY_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE", negative)
     print("SEED", args.seed)
@@ -272,8 +308,17 @@ def main() -> int:
         "prompt_source": "agent_authored_prompt_slots",
         "prompt_slots_path": str(prompt_slots_path),
         "prompt_slots": prompt_slots_data,
-        "prompt_policy": "README wrapper + agent-authored CSV-verified prompt slots",
+        "prompt_context_notes": prompt_context_notes(prompt_slots_data),
+        "prompt_policy": "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots",
+        "taxonomy_source": taxonomy_meta['taxonomy_source'],
+        "taxonomy_db_path": taxonomy_meta['taxonomy_db_path'],
+        "legacy_csv_path": taxonomy_meta['legacy_csv_path'],
+        "legacy_csv_used": taxonomy_meta['legacy_csv_used'],
+        "taxonomy_placeholder_tags": placeholder_tags,
+        "taxonomy_negative_tags": negative_slot_tags,
+        "taxonomy_validation": taxonomy_validation,
         "csv_placeholder_tags": placeholder_tags,
+        "csv_negative_tags": negative_slot_tags,
         "positive_prompt": positive,
         "negative_prompt": negative,
         "seed": args.seed,
@@ -287,6 +332,7 @@ def main() -> int:
         "promotion_status": "not_promoted",
     }
     metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / "metadata.json"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.prepare_only:
         metadata["prepare_only"] = True
@@ -304,7 +350,7 @@ def main() -> int:
     history_path = run_dir / "history.json"
     history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    output_paths = image_paths_from_history(history, output_root)
+    output_paths = image_paths_from_history(history, output_roots)
     copied_paths = []
     candidate_dir = project_root / "docs/automation/generated_candidates/backgrounds" / run_id
     candidate_dir.mkdir(parents=True, exist_ok=True)

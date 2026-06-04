@@ -3,7 +3,7 @@
 
 Prompt discipline:
 - Keep scene_event_cg README positive wrapper exactly.
-- Fill only the two README brace placeholders with situation-appropriate CSV-verified tags.
+- Fill only the two README brace placeholders with situation-appropriate taxonomy-verified tags.
 - Do not rewrite the workflow negative prompt.
 - Use the selected char_base seed for downstream consistency.
 - Do not modify canonical workflow JSON; write a patched runtime copy under docs/automation/generation_runs/.
@@ -11,7 +11,6 @@ Prompt discipline:
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import shutil
@@ -23,10 +22,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from danbooru_taxonomy import validate_tags
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
 RUNS_ROOT = PROJECT_ROOT / "docs/automation/generation_runs"
-DEFAULT_CHAR_BASE_METADATA = RUNS_ROOT / "char_base_smoke_20260530_063002/metadata.json"
 
 
 def slugify(value: str) -> str:
@@ -89,16 +89,6 @@ LORA_STRENGTH_CLIP = 0.65
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
-
-def collect_csv_tags(csv_path: Path) -> set[str]:
-    tags: set[str] = set()
-    with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as f:
-        for row in csv.reader(f):
-            for cell in row[:2]:
-                s = cell.strip()
-                if s:
-                    tags.add(s)
-    return tags
 
 
 def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], list[str], dict]:
@@ -215,22 +205,19 @@ def main() -> int:
     if prompt_slots_path is None:
         raise RuntimeError('UNROUTED_SCENE_EVENT_CG: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
     character_feature_tags, outfit_detail_tags, scene_context_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'scene_event_cg', args.asset_id)
-    default_char_base_metadata = runs_root / "char_base_smoke_20260530_063002/metadata.json"
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
     output_root = Path(contract["comfyui_output_root"])
     workflow_path = workflow_root / "scene_event_cg/scene_event_cg_workflow_api.json"
-    csv_path = workflow_root / "danbooru_tag.csv"
-    char_meta_path = Path(args.char_base_metadata) if args.char_base_metadata else default_char_base_metadata
+    if not args.char_base_metadata:
+        raise RuntimeError('SCENE_EVENT_CG_SOURCE_REQUIRED: pass --char-base-metadata for the approved/current source character base metadata; stale hardcoded run fallbacks are forbidden')
+    char_meta_path = Path(args.char_base_metadata)
     char_meta = load_json(char_meta_path)
 
     seed = args.seed if args.seed is not None else int(char_meta.get("scene_event_cg_seed_to_reuse") or char_meta["seed"])
 
     placeholder_tags = character_feature_tags + outfit_detail_tags + scene_context_tags
-    tags = collect_csv_tags(csv_path)
-    missing = [t for t in placeholder_tags if t not in tags]
-    if missing:
-        raise RuntimeError(f"CSV tag validation failed for README placeholder tags: {missing}")
+    taxonomy_validation, taxonomy_meta = validate_tags(workflow_root, placeholder_tags)
 
     endpoint = discover_endpoint(contract.get("comfyui_endpoint_candidates") or [contract["comfyui_endpoint"]])
     workflow = load_json(workflow_path)
@@ -270,9 +257,10 @@ def main() -> int:
     print("WORKFLOW", str(workflow_path))
     print("CHAR_BASE_METADATA", str(char_meta_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
-    print("PROMPT_POLICY", "README positive exact; fill only brace placeholders with agent-authored CSV-verified prompt slots; leave workflow negative unchanged")
+    print("PROMPT_POLICY", "README positive exact; fill only brace placeholders with agent-authored SQLite-verified prompt slots; leave workflow negative unchanged" if taxonomy_meta['taxonomy_source'] == 'db' else "README positive exact; fill only brace placeholders with agent-authored legacy taxonomy-verified prompt slots; leave workflow negative unchanged")
     print("PROMPT_SLOTS", str(prompt_slots_path))
-    print("CSV_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
+    print("TAXONOMY_SOURCE", taxonomy_meta['taxonomy_source'])
+    print("TAXONOMY_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
     print("POSITIVE", positive)
     print("NEGATIVE_UNCHANGED", original_negative)
     print("SEED", seed)
@@ -313,7 +301,13 @@ def main() -> int:
         "prompt_source": "agent_authored_prompt_slots",
         "prompt_slots_path": str(prompt_slots_path),
         "prompt_slots": prompt_slots_data,
-        "prompt_policy": "README positive exact; fill only brace placeholders with agent-authored CSV-verified prompt slots; leave workflow negative unchanged",
+        "prompt_policy": "README positive exact; fill only brace placeholders with agent-authored SQLite-verified prompt slots; leave workflow negative unchanged" if taxonomy_meta['taxonomy_source'] == 'db' else "README positive exact; fill only brace placeholders with agent-authored legacy taxonomy-verified prompt slots; leave workflow negative unchanged",
+        "taxonomy_source": taxonomy_meta['taxonomy_source'],
+        "taxonomy_db_path": taxonomy_meta['taxonomy_db_path'],
+        "legacy_csv_path": taxonomy_meta['legacy_csv_path'],
+        "legacy_csv_used": taxonomy_meta['legacy_csv_used'],
+        "taxonomy_placeholder_tags": placeholder_tags,
+        "taxonomy_validation": taxonomy_validation,
         "csv_placeholder_tags": placeholder_tags,
         "character_features_placeholder": character_feature_tags,
         "outfit_detail_placeholder": outfit_detail_tags,

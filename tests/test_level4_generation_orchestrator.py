@@ -97,7 +97,65 @@ def test_generation_orchestrator_runs_generate_items_and_writes_qa_reports(tmp_p
     assert Path(result['qa_reports'][0]['path']).exists()
     metadata = json.loads(Path(result['metadata_path']).read_text(encoding='utf-8'))
     assert metadata['qa_status'] == 'qa_pass_candidate_not_promoted'
+    assert metadata['qa_reports'][0]['status'] == 'pass'
+    assert metadata['qa_report'] == metadata['qa_reports'][0]['path']
+    assert Path(metadata['qa_report']).exists()
     assert metadata['promotion_status'] == 'not_promoted_pending_owner_approval'
+
+
+def test_generation_orchestrator_passes_scene_event_source_char_base_metadata(tmp_path: Path):
+    project = make_project(tmp_path)
+    char_meta = project / 'docs/automation/generation_runs/char_source/metadata.json'
+    write_json(char_meta, {'run_id': 'char_source', 'seed': 123, 'scene_event_cg_seed_to_reuse': 123})
+    write_json(project / 'docs/production/prompt_slots/event_test.json', {
+        'workflow_id': 'scene_event_cg',
+        'asset_id': 'event_test',
+        'prompt_slots': {
+            'character_features': ['medium_hair'],
+            'outfit_detail': ['white_shirt'],
+            'scene_context': ['indoors'],
+        },
+    })
+    write_json(project / 'docs/production/asset_requests/scene.resolved_asset_requests.json', {
+        'scene_id': 'scene',
+        'resolved_asset_requests': [{
+            'asset_id': 'event_test',
+            'asset_type': 'scene_event_cg',
+            'description': 'event test',
+            'decision': 'generate',
+            'status': 'needs_generation',
+            'recommended_workflow_id': 'scene_event_cg',
+            'source_char_base_metadata': str(char_meta),
+        }],
+    })
+    fake_runner = tmp_path / 'fake_event_runner.py'
+    fake_runner.write_text(
+        "import argparse, json\n"
+        "from pathlib import Path\n"
+        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--prompt-slots'); parser.add_argument('--char-base-metadata')\n"
+        "args=parser.parse_args()\n"
+        "assert args.char_base_metadata and args.char_base_metadata.endswith('metadata.json'), args.char_base_metadata\n"
+        "root=Path(args.project_root); run_dir=root/'docs/automation/generation_runs/fake_event_run'; run_dir.mkdir(parents=True, exist_ok=True)\n"
+        "meta={'run_id':'fake_event_run','asset_type':'scene_event_cg','workflow_id':'scene_event_cg','asset_id':args.asset_id,'candidate_copies':[],'source_char_base_metadata':args.char_base_metadata,'promotion_status':'not_promoted','qa_status':'pending_visual_review'}\n"
+        "meta_path=run_dir/'metadata.json'; meta_path.write_text(json.dumps(meta, indent=2)+'\\n', encoding='utf-8')\n"
+        "print('RUN_ID fake_event_run'); print('METADATA', meta_path)\n",
+        encoding='utf-8',
+    )
+    out = tmp_path / 'generation_batch.json'
+    proc = subprocess.run([
+        sys.executable, str(ORCH_SCRIPT),
+        '--project-root', str(project),
+        '--resolved-glob', 'docs/production/asset_requests/*.resolved_asset_requests.json',
+        '--runner', f'scene_event_cg={sys.executable} {fake_runner}',
+        '--out', str(out),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(out.read_text(encoding='utf-8'))
+    event_result = next(r for r in data['results'] if r['asset_id'] == 'event_test')
+    assert event_result['status'] == 'generated'
+    assert '--char-base-metadata' in event_result['command']
+    assert str(char_meta) in event_result['command']
 
 
 def test_audio_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_path: Path):
