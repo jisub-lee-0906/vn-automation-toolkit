@@ -1,0 +1,130 @@
+{
+  "init": {
+    "class": "bootstrap",
+    "project_selection": "explicit --project-root required by bootstrap command",
+    "path_policy": "Rejects --renpy-game-dir outside --project-root; writes generated contract and initial manifest under project root/game dir only after confinement check.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_init_rejects_renpy_game_dir_outside_project",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "check": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Reads selected project game directory and manifest only after contract confinement.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_project_tools_fail_closed_without_active_project",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "gaps": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Reads game/manifest under project; --json-out is resolved through resolve_project_path.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_gaps_rejects_json_outside_project"
+    ]
+  },
+  "validate": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Validates automation docs under selected project after contract confinement.",
+    "evidence": [
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "sync": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Writes extracted/resolved request batch summaries under project; --out-summary is project-confined. Obsidian vault reads are an intentional external input from contract/CLI.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_project_commands_reject_sidecar_outputs_outside_project"
+    ]
+  },
+  "resolve": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "asset_requests, --manifest, --generation-runs-root, --contract, and --out are project-confined.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_resolve_rejects_output_outside_project",
+      "tests/test_cross_game_portability_hardening.py::test_resolve_rejects_external_manifest_and_generation_runs_root"
+    ]
+  },
+  "queue": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Resolved-request glob is relative/no-parent-traversal; matches and --out-md/--out-json are project-confined.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_queue_and_generate_reject_resolved_glob_parent_traversal",
+      "tests/test_cross_game_portability_hardening.py::test_project_commands_reject_sidecar_outputs_outside_project"
+    ]
+  },
+  "generate": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Resolved-request glob is relative/no-parent-traversal; matches and --out/default output are project-confined. Runner commands are explicit operator-provided generation tools.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_generate_with_active_project_default_out_is_project_scoped",
+      "tests/test_cross_game_portability_hardening.py::test_queue_and_generate_reject_resolved_glob_parent_traversal"
+    ]
+  },
+  "promote": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Metadata, candidate source, QA report, destination, manifest, and promotion log are project/game confined.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_promote_rejects_external_metadata_candidate_and_qa"
+    ]
+  },
+  "verify": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Reads contract-configured runtime dependencies after project path confinement; external ComfyUI/workflow endpoints are intentional configured dependencies.",
+    "evidence": [
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "preflight": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Checks project-local game/manifest sidecars and validates workflow_index under workflow_pack_root and title-scoped Obsidian roots.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_preflight_reports_cross_game_contract_readiness",
+      "tests/test_cross_game_portability_hardening.py::test_preflight_rejects_workflow_index_outside_workflow_pack"
+    ]
+  },
+  "validate-scene": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Capture plan and output dir are project-confined; scene/capture names, warps, waits, and runtime phases are bounded.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_validate_scene_rejects_output_dir_outside_project",
+      "tests/test_formal_assurance_invariants.py::test_project_path_helpers_are_deterministically_fuzzed"
+    ]
+  },
+  "capture-scene": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Capture plan and screenshot outputs are project-confined; runtime dependencies fail structured when unavailable.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_capture_scene_dry_run_uses_generic_capture_plan",
+      "tests/test_cross_game_portability_hardening.py::test_capture_scene_refuses_runtime_when_dependencies_missing_even_with_fake_renpy"
+    ]
+  },
+  "audit": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Audits selected project; --json-out is project-confined.",
+    "evidence": [
+      "tests/test_cross_game_portability_hardening.py::test_audit_rejects_json_outside_project"
+    ]
+  },
+  "director": {
+    "class": "project",
+    "project_selection": "explicit --project-root required by director subcommands",
+    "path_policy": "Director UX uses explicit project root and scope guards around promotion metadata; Telegram media cache is an intentional Hermes external delivery cache, not a project sidecar.",
+    "evidence": [
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  }
+}
