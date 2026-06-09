@@ -6,8 +6,13 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / 'tools'
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+from vn_product_config import build_project_paths, resolve_project_path, require_under  # noqa: E402
 DEFAULT_CONTRACT = ROOT / 'docs/automation/project_contract.json'
 DEFAULT_MANIFEST = ROOT / 'game/data/asset_manifest.json'
 DEFAULT_CANDIDATES_ROOT = ROOT / 'docs/automation/generated_candidates'
@@ -272,10 +277,11 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
 
 def build_resolution(args: argparse.Namespace) -> dict[str, Any]:
     root = Path(args.project_root).resolve() if args.project_root else ROOT
-    requests_path = Path(args.asset_requests)
-    manifest_path = Path(args.manifest) if args.manifest else root / DEFAULT_MANIFEST.relative_to(ROOT)
-    contract_path = Path(args.contract) if args.contract else root / DEFAULT_CONTRACT.relative_to(ROOT)
-    generation_runs_root = Path(args.generation_runs_root) if args.generation_runs_root else root / DEFAULT_GENERATION_RUNS_ROOT.relative_to(ROOT)
+    requests_path = Path(args.asset_requests).resolve()
+    require_under(requests_path, root, 'asset_requests')
+    manifest_path = resolve_project_path(root, args.manifest, 'manifest') if args.manifest else root / DEFAULT_MANIFEST.relative_to(ROOT)
+    contract_path = resolve_project_path(root, args.contract, 'contract') if args.contract else root / DEFAULT_CONTRACT.relative_to(ROOT)
+    generation_runs_root = resolve_project_path(root, args.generation_runs_root, 'generation-runs-root') if args.generation_runs_root else root / DEFAULT_GENERATION_RUNS_ROOT.relative_to(ROOT)
 
     requests_data = load_json(requests_path)
     manifest = load_json(manifest_path)
@@ -308,7 +314,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        project_paths = build_project_paths(args.project_root, args.contract)
+        args.project_root = str(project_paths.project_root)
+        out_path = resolve_project_path(project_paths.project_root, args.out, 'out')
         data = build_resolution(args)
+    except ValueError as exc:
+        print(f'RESOLVE_REFUSED: {exc}')
+        return 2
     except FileNotFoundError as exc:
         print(f'RESOLVE_FAILED: missing file: {exc.filename or exc}')
         return 1
@@ -316,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'RESOLVE_FAILED: invalid JSON: {exc}')
         return 1
 
-    save_json(Path(args.out), data)
+    save_json(out_path, data)
     print('RESOLVE_ASSET_REQUESTS')
     print('scene_id', data.get('scene_id'))
     print('count', len(data['resolved_asset_requests']))

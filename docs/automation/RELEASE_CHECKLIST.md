@@ -54,11 +54,14 @@ vn-auto director new-scene \
 
 vn-auto sync --project-root "$PROJECT" --vault "$VAULT" --notes-glob "VN/Scenes/*.md"
 vn-auto queue --project-root "$PROJECT"
+vn-auto preflight --project-root "$PROJECT" --skip-comfyui
 vn-auto validate --project-root "$PROJECT" --skip-obsidian
+# Optional per-scene gate once a capture plan exists:
+# vn-auto validate-scene --project-root "$PROJECT" --scene-id opening_smoke --capture-plan "$PROJECT/docs/automation/capture_plans/opening_smoke.json" --static-only
 vn-auto verify --project-root "$PROJECT" --skip-comfyui --skip-renpy-lint
 ```
 
-Acceptance: all generated sidecars are under `$PROJECT`, not under the toolkit source directory or another title.
+Acceptance: all generated sidecars are under `$PROJECT`, Obsidian notes default under `$VAULT/<game_slug>/VN`, and nothing is written under the toolkit source directory or another title.
 
 ## Live title regression
 
@@ -67,6 +70,7 @@ Run this against the active title you are using to validate the toolkit, but kee
 ```bash
 LIVE="E:/workspace/renpy-project/<active_title>"
 python -m pytest -q
+vn-auto preflight --project-root "$LIVE" --skip-comfyui
 vn-auto validate --project-root "$LIVE" --skip-obsidian
 vn-auto check --project-root "$LIVE"
 vn-auto verify --project-root "$LIVE" --skip-comfyui

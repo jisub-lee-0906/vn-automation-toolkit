@@ -68,7 +68,7 @@ def test_vn_auto_cli_check_and_gaps_accept_generic_project(tmp_path: Path):
     assert check.returncode == 0, check.stdout + check.stderr
     assert 'ALL_RENPY_ASSET_REFS_EXIST' in check.stdout
 
-    gap_path = tmp_path / 'gap.json'
+    gap_path = project / 'docs/automation/gap.json'
     gaps = run_cli('gaps', '--project-root', str(project), '--json-out', str(gap_path))
     assert gaps.returncode == 0, gaps.stdout + gaps.stderr
     gap_report = json.loads(gap_path.read_text(encoding='utf-8'))

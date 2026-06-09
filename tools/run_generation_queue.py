@@ -16,6 +16,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from qa_asset_file import inspect_asset  # noqa: E402
+from vn_product_config import build_project_paths, require_under, resolve_project_path, validate_project_glob  # noqa: E402
 
 DEFAULT_RUNNERS = {
     'audio_sfx_mmaudio': f'{sys.executable} {TOOLS / "run_audio_sfx_mmaudio_smoke.py"}',
@@ -47,8 +48,10 @@ def parse_runner_overrides(values: list[str] | None) -> dict[str, str]:
 
 
 def collect_generate_items(project_root: Path, resolved_glob: str) -> list[dict[str, Any]]:
+    validate_project_glob(resolved_glob, 'resolved_glob')
     items = []
     for path in sorted(project_root.glob(resolved_glob)):
+        require_under(path.resolve(), project_root, 'resolved asset request')
         data = load_json(path)
         scene_id = data.get('scene_id') or path.stem.replace('.resolved_asset_requests', '')
         for item in data.get('resolved_asset_requests', []) or []:
@@ -232,21 +235,27 @@ def build_batch(project_root: Path, resolved_glob: str, runners: dict[str, str],
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Run workflow generation for resolved asset requests with decision=generate.')
-    parser.add_argument('--project-root', default=str(ROOT))
+    parser.add_argument('--project-root', default=None)
+    parser.add_argument('--contract')
     parser.add_argument('--resolved-glob', default='docs/production/asset_requests/*.resolved_asset_requests.json')
     parser.add_argument('--runner', action='append', help='Override runner as workflow_id=command')
     parser.add_argument('--limit', type=int)
-    parser.add_argument('--out', default=str(ROOT / 'docs/automation/generation_queue_batch.json'))
+    parser.add_argument('--out', default=None)
     args = parser.parse_args(argv)
 
-    project_root = Path(args.project_root).resolve()
+    paths = build_project_paths(args.project_root, args.contract)
+    project_root = paths.project_root
     try:
+        out_path = resolve_project_path(project_root, args.out, 'out') if args.out else (project_root / 'docs/automation/generation_queue_batch.json').resolve()
         runners = parse_runner_overrides(args.runner)
         data = build_batch(project_root, args.resolved_glob, runners, args.limit)
+    except ValueError as exc:
+        print(f'GENERATION_QUEUE_REFUSED: {exc}')
+        return 2
     except Exception as exc:
         print(f'GENERATION_QUEUE_FAILED: {type(exc).__name__}: {exc}')
         return 1
-    save_json(Path(args.out), data)
+    save_json(out_path, data)
     print('RUN_GENERATION_QUEUE')
     for key, value in data['counts'].items():
         print(key, value)

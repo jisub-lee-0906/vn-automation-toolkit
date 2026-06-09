@@ -58,7 +58,7 @@ Preview writes without creating files:
 vn-auto init --project-root E:/workspace/renpy-project/my_new_title --dry-run
 ```
 
-Existing scaffold files are preserved unless `--force` is supplied.
+Existing scaffold files are preserved unless `--force` is supplied. If `--obsidian-vault` is provided without `--obsidian-project-root`, the safe default is `<vault>/<game_slug>/VN` so multiple titles do not share a flat `VN/Scenes` namespace.
 
 ## 3. Project contract
 
@@ -82,13 +82,14 @@ Important fields:
 }
 ```
 
-Tools resolve paths from `--project-root`, `--contract`, or `VN_AUTOMATION_PROJECT_ROOT`. Do not hardcode title paths inside scripts.
+Tools resolve paths from explicit `--project-root`, `--contract`, `VN_AUTOMATION_PROJECT_ROOT`, or the current working directory only when it contains `docs/automation/project_contract.json`. Without an active project they fail closed with `PROJECT_SELECTION_REQUIRED`; do not hardcode title paths inside scripts.
 
 ## 4. Static verification commands
 
 Installed command namespace:
 
 ```bash
+vn-auto preflight --project-root . --skip-comfyui
 vn-auto validate --project-root .
 vn-auto check --project-root .
 vn-auto gaps --project-root . --json-out docs/automation/integration_gap_report.json
@@ -124,6 +125,21 @@ CI/static product verification without live ComfyUI/Ren'Py dependencies:
 ```bash
 vn-auto verify --project-root . --skip-comfyui --skip-renpy-lint
 ```
+
+
+## 4.1 Scene-level validation
+
+Scene validation is title-agnostic: the reusable harness reads a project contract plus a scene-specific capture plan. Keep game-specific labels, warp points, expected screens, and visual assertions in `docs/automation/capture_plans/<scene_id>.json`; keep the engine generic.
+
+```bash
+vn-auto validate-scene \
+  --project-root E:/workspace/renpy-project/my_new_title \
+  --scene-id opening_night_library \
+  --capture-plan E:/workspace/renpy-project/my_new_title/docs/automation/capture_plans/opening_night_library.json \
+  --static-only
+```
+
+`--static-only` checks the capture-plan schema, asset references, report generation, and cleanup without requiring a live Ren'Py screenshot pass. For runtime screenshot QA, `vn-auto capture-scene --project-root ... --scene-id ... --capture-plan ...` consumes the same plan and writes screenshots/contact sheets when Ren'Py and Windows capture dependencies are available.
 
 ## 5. Director UX console
 

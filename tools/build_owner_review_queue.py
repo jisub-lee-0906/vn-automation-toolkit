@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / 'tools'
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+from vn_product_config import build_project_paths, resolve_project_path, require_under, validate_project_glob  # noqa: E402
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -19,7 +25,12 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def iter_resolved(project_root: Path, pattern: str) -> list[Path]:
-    return sorted(project_root.glob(pattern))
+    validate_project_glob(pattern, 'resolved_glob')
+    paths = []
+    for path in sorted(project_root.glob(pattern)):
+        require_under(path.resolve(), project_root, 'resolved asset request')
+        paths.append(path)
+    return paths
 
 
 def collect_items(paths: list[Path]) -> dict[str, Any]:
@@ -136,17 +147,26 @@ def build_queue(project_root: Path, resolved_glob: str) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Build an owner review queue from resolved scene asset requests.')
-    parser.add_argument('--project-root', default=str(ROOT))
+    parser.add_argument('--project-root', default=None)
+    parser.add_argument('--contract')
     parser.add_argument('--resolved-glob', default='docs/production/asset_requests/*.resolved_asset_requests.json')
     parser.add_argument('--out-md', default=None)
     parser.add_argument('--out-json', default=None)
     args = parser.parse_args(argv)
 
-    project_root = Path(args.project_root).resolve()
-    out_md = Path(args.out_md) if args.out_md else project_root / 'docs/production/owner_review_queue.md'
-    out_json = Path(args.out_json) if args.out_json else project_root / 'docs/production/owner_review_queue.json'
+    paths = build_project_paths(args.project_root, args.contract)
+    project_root = paths.project_root
+    try:
+        out_md = resolve_project_path(project_root, args.out_md, 'out-md') if args.out_md else (project_root / 'docs/production/owner_review_queue.md').resolve()
+        out_json = resolve_project_path(project_root, args.out_json, 'out-json') if args.out_json else (project_root / 'docs/production/owner_review_queue.json').resolve()
+    except ValueError as exc:
+        print(f'QUEUE_REFUSED: {exc}')
+        return 2
     try:
         data = build_queue(project_root, args.resolved_glob)
+    except ValueError as exc:
+        print(f'QUEUE_REFUSED: {exc}')
+        return 2
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f'QUEUE_FAILED: {exc}')
         return 1

@@ -142,6 +142,14 @@ CHARACTER_ASSET_SCHEMA = {
 }
 
 
+
+
+def require_under(child: Path, parent: Path, label: str) -> None:
+    child_r = child.resolve()
+    parent_r = parent.resolve()
+    if child_r != parent_r and parent_r not in child_r.parents:
+        raise ValueError(f'Unsafe {label} outside {parent}: {child}')
+
 def write_text(path: Path, content: str, force: bool, planned: list[str], written: list[str]) -> None:
     planned.append(str(path))
     if path.exists() and not force:
@@ -156,7 +164,7 @@ def write_json(path: Path, data: dict[str, Any], force: bool, planned: list[str]
 
 
 def build_contract(args: argparse.Namespace, project_root: Path) -> dict[str, Any]:
-    game_dir = Path(args.renpy_game_dir) if args.renpy_game_dir else project_root / 'game'
+    game_dir = Path(args.renpy_game_dir).resolve() if args.renpy_game_dir else project_root / 'game'
     workflow_index = Path(args.workflow_index) if args.workflow_index else (Path(args.workflow_pack_root) / 'WORKFLOW_INDEX.json' if args.workflow_pack_root else None)
     generation_runs_root = project_root / 'docs/automation/generation_runs'
     generated_candidates_root = project_root / 'docs/automation/generated_candidates'
@@ -166,7 +174,13 @@ def build_contract(args: argparse.Namespace, project_root: Path) -> dict[str, An
     game_title = args.game_title or project_root.name.replace('_', ' ').replace('-', ' ').title()
     game_slug = args.game_slug or slugify(project_root.name)
     obsidian_vault = Path(args.obsidian_vault).resolve() if args.obsidian_vault else None
-    obsidian_project_root = Path(args.obsidian_project_root).resolve() if args.obsidian_project_root else (obsidian_vault / 'VN' if obsidian_vault else None)
+    # Cross-game safe default: namespace each title under the vault by game_slug.
+    # A shared <vault>/VN default is convenient but can contaminate multiple games.
+    obsidian_project_root = (
+        Path(args.obsidian_project_root).resolve()
+        if args.obsidian_project_root
+        else (obsidian_vault / game_slug / 'VN' if obsidian_vault else None)
+    )
     obsidian_scenes_glob = args.obsidian_scenes_glob or ('Scenes/*.md' if obsidian_project_root else '')
     return {
         'version': '1.0.0',
@@ -202,6 +216,11 @@ def build_contract(args: argparse.Namespace, project_root: Path) -> dict[str, An
 def scaffold(args: argparse.Namespace) -> dict[str, Any]:
     project_root = Path(args.project_root).resolve()
     game_dir = Path(args.renpy_game_dir).resolve() if args.renpy_game_dir else project_root / 'game'
+    try:
+        require_under(game_dir, project_root, 'renpy-game-dir')
+    except ValueError as exc:
+        print(f'INIT_REFUSED: {exc}')
+        raise SystemExit(2) from exc
     planned: list[str] = []
     written: list[str] = []
     contract = build_contract(args, project_root)
@@ -247,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--workflow-pack-root', default='')
     parser.add_argument('--workflow-index', default='')
     parser.add_argument('--obsidian-vault', default='')
-    parser.add_argument('--obsidian-project-root', default='', help='Title-specific Obsidian project root, normally <vault>/VN.')
+    parser.add_argument('--obsidian-project-root', default='', help='Title-specific Obsidian project root, normally <vault>/<game_slug>/VN.')
     parser.add_argument('--obsidian-scenes-glob', default='', help='Scene-note glob relative to obsidian_project_root. Defaults to Scenes/*.md.')
     parser.add_argument('--game-title', default='', help='Human title stored in project_contract.json.')
     parser.add_argument('--game-slug', default='', help='Stable title slug stored in project_contract.json.')

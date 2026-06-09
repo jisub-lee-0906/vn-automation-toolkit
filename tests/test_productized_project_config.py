@@ -83,7 +83,7 @@ def test_asset_ref_checker_accepts_generic_project_root(tmp_path: Path):
 
 def test_integration_gap_report_accepts_generic_project_root(tmp_path: Path):
     project, _ = make_min_project(tmp_path)
-    report_path = tmp_path / 'gap.json'
+    report_path = project / 'docs/automation/gap.json'
     proc = subprocess.run(
         [sys.executable, str(TOOLS / 'report_renpy_integration_gaps.py'), '--project-root', str(project), '--json-out', str(report_path)],
         cwd=ROOT,

@@ -54,7 +54,7 @@ If the active Python lacks pip, use the environment's package manager or bootstr
 
 ## Bootstrap a title
 
-Use explicit absolute paths. Do not rely on `cd PROJECT && vn-auto init --project-root .` in editable installs.
+Use explicit absolute paths for bootstrap. After a title has `docs/automation/project_contract.json`, project tools may run from that project root, but otherwise fail closed instead of silently selecting the toolkit checkout.
 
 ```bash
 vn-auto init \
@@ -66,11 +66,12 @@ vn-auto init \
   --obsidian-vault "C:/Users/Desktop/Documents/Obsidian Vault"
 ```
 
-Confirm the `INIT_VN_AUTOMATION_PROJECT` banner prints the intended `project_root` before continuing.
+Confirm the `INIT_VN_AUTOMATION_PROJECT` banner prints the intended `project_root` before continuing. When `--obsidian-vault` is supplied without `--obsidian-project-root`, init now creates a title-scoped default at `<vault>/<game_slug>/VN`.
 
 ## Common commands
 
 ```bash
+vn-auto preflight --project-root "E:/workspace/renpy-project/my_title" --skip-comfyui
 vn-auto director status --project-root "E:/workspace/renpy-project/my_title"
 vn-auto director new-scene --project-root "E:/workspace/renpy-project/my_title" --scene-id opening --title "Opening" --summary "..." --goal "..." --asset "background:bg_opening|description" --playable-placeholder
 vn-auto sync --project-root "E:/workspace/renpy-project/my_title" --vault "C:/Users/Desktop/Documents/Obsidian Vault" --notes-glob "VN/Scenes/*.md"
@@ -87,6 +88,8 @@ vn-auto validate --project-root "E:/workspace/renpy-project/my_title" --skip-obs
 vn-auto check --project-root "E:/workspace/renpy-project/my_title"
 vn-auto gaps --project-root "E:/workspace/renpy-project/my_title" --json-out "E:/workspace/renpy-project/my_title/docs/automation/integration_gap_report.json"
 vn-auto verify --project-root "E:/workspace/renpy-project/my_title" --skip-comfyui
+vn-auto validate-scene --project-root "E:/workspace/renpy-project/my_title" --scene-id opening --capture-plan "E:/workspace/renpy-project/my_title/docs/automation/capture_plans/opening.json" --static-only
+vn-auto capture-scene --project-root "E:/workspace/renpy-project/my_title" --scene-id opening --capture-plan "E:/workspace/renpy-project/my_title/docs/automation/capture_plans/opening.json" --dry-run
 vn-auto audit --project-root "E:/workspace/renpy-project/my_title" --strict
 ```
 
@@ -99,7 +102,7 @@ Before calling a toolkit checkout release-ready:
 3. Full test suite passes.
 4. Editable install points to this checkout.
 5. `vn-auto --help` and `vn-auto --version` work.
-6. A cleanroom title can run `init -> director new-scene -> sync/queue -> validate -> verify` with sidecars under the cleanroom title root.
+6. A cleanroom title can run `init -> preflight -> director new-scene -> sync/queue -> validate -> validate-scene -> verify` with sidecars under the cleanroom title root.
 7. The live title still passes `pytest`, `validate`, `check`, `verify`, and strict `audit` after runtime junk cleanup.
 
 See `docs/automation/productization_readme.md` for the extended product workflow and Telegram approval UX.

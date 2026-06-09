@@ -125,7 +125,7 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
             {'asset_id': 'bg_bus_interior_dawn', 'asset_type': 'background', 'description': '새벽 첫차 버스 내부'},
         ],
     })
-    out = tmp_path / 'resolved.json'
+    out = project / 'docs/production/asset_requests/resolved.json'
     proc = run_resolver(project, requests, out)
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -152,12 +152,12 @@ def test_resolver_blocks_manifest_hit_with_missing_file(tmp_path: Path):
     manifest['assets'][0]['promoted_path'] = 'images/backgrounds/missing.png'
     write_json(manifest_path, manifest)
 
-    requests = tmp_path / 'requests.json'
+    requests = project / 'docs/production/asset_requests/requests.json'
     write_json(requests, {
         'scene_id': 'sample',
         'asset_requests': [{'asset_id': 'bg_classroom_morning', 'asset_type': 'background'}],
     })
-    out = tmp_path / 'resolved.json'
+    out = project / 'docs/production/asset_requests/resolved.json'
     proc = run_resolver(project, requests, out)
 
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -166,3 +166,14 @@ def test_resolver_blocks_manifest_hit_with_missing_file(tmp_path: Path):
     assert item['decision'] == 'blocked_manifest_missing_file'
     assert item['status'] == 'blocked'
     assert item['manifest_matches'][0]['file_exists'] is False
+
+
+
+def test_resolver_rejects_asset_requests_outside_project(tmp_path: Path):
+    project = make_project(tmp_path)
+    requests = tmp_path / 'requests.json'
+    write_json(requests, {'scene_id': 'outside', 'asset_requests': []})
+    out = project / 'docs/production/asset_requests/resolved.json'
+    proc = run_resolver(project, requests, out)
+    assert proc.returncode == 2
+    assert 'asset_requests' in proc.stdout + proc.stderr

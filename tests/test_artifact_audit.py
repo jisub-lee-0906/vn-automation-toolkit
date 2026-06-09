@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +17,10 @@ def make_min_project(tmp_path: Path) -> Path:
     (project / 'game').mkdir(parents=True)
     (project / 'docs/production/director_cards').mkdir(parents=True)
     (project / 'docs/production/screenshots').mkdir(parents=True)
+    (project / 'docs/automation').mkdir(parents=True)
+    (project / 'game/data').mkdir(parents=True)
+    (project / 'game/data/asset_manifest.json').write_text(json.dumps({'version': '1.0.0', 'assets': []}), encoding='utf-8')
+    (project / 'docs/automation/project_contract.json').write_text(json.dumps({'renpy_project_root': str(project), 'renpy_game_dir': str(project / 'game'), 'manifest_path': str(project / 'game/data/asset_manifest.json')}), encoding='utf-8')
     return project
 
 

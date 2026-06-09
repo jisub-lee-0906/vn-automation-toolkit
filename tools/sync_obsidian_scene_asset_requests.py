@@ -15,6 +15,7 @@ if str(TOOLS) not in sys.path:
 
 from extract_asset_requests_from_scene_note import build_output  # noqa: E402
 from resolve_asset_requests import build_resolution, save_json  # noqa: E402
+from vn_product_config import build_project_paths, resolve_project_path  # noqa: E402
 
 FRONTMATTER_RE = re.compile(r'^---\s*\n(?P<body>.*?)\n---\s*\n', re.S)
 SCENE_ID_RE = re.compile(r'^scene_id\s*:\s*(?P<scene_id>.+?)\s*$', re.M)
@@ -125,14 +126,20 @@ def sync_notes(project_root: Path, vault: Path, notes_glob: str, out_summary: Pa
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Extract and resolve Required Assets from Obsidian scene notes.')
-    parser.add_argument('--project-root', default=str(ROOT))
+    parser.add_argument('--project-root', default=None)
+    parser.add_argument('--contract')
     parser.add_argument('--vault', help='Obsidian vault root. Defaults to project_contract.json obsidian_vault.')
     parser.add_argument('--notes-glob', default=None, help='Glob relative to --vault/obsidian_project_root. Defaults to project_contract obsidian_scenes_glob or VN/Scenes/*.md.')
     parser.add_argument('--out-summary', default=None)
     args = parser.parse_args(argv)
 
-    project_root = Path(args.project_root).resolve()
-    out_summary = Path(args.out_summary) if args.out_summary else project_root / 'docs/automation/obsidian_scene_asset_request_batch.json'
+    paths = build_project_paths(args.project_root, args.contract)
+    project_root = paths.project_root
+    try:
+        out_summary = resolve_project_path(project_root, args.out_summary, 'out-summary') if args.out_summary else (project_root / 'docs/automation/obsidian_scene_asset_request_batch.json').resolve()
+    except ValueError as exc:
+        print(f'SYNC_REFUSED: {exc}')
+        return 2
     default_root, default_glob = default_obsidian_from_contract(project_root)
     vault = Path(args.vault) if args.vault else default_root
     if args.vault and args.notes_glob is None and default_root is not None:

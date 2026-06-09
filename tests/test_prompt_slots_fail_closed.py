@@ -77,7 +77,7 @@ def test_generation_queue_fails_closed_when_prompt_sensitive_request_has_no_prom
             'recommended_workflow_id': 'scene_background',
         }],
     })
-    out = tmp_path / 'batch.json'
+    out = project / 'docs/automation/batch.json'
 
     proc = subprocess.run([
         sys.executable, str(QUEUE_SCRIPT),
@@ -183,7 +183,7 @@ def test_audio_generation_queue_fails_closed_without_prompt_slots(tmp_path: Path
             'recommended_workflow_id': 'audio_sfx_mmaudio',
         }],
     })
-    out = tmp_path / 'batch.json'
+    out = project / 'docs/automation/batch.json'
 
     proc = subprocess.run([
         sys.executable, str(QUEUE_SCRIPT),
@@ -209,7 +209,7 @@ def test_char_base_generation_queue_fails_closed_without_prompt_slots(tmp_path: 
             'recommended_workflow_id': 'char_base',
         }],
     })
-    out = tmp_path / 'batch.json'
+    out = project / 'docs/automation/batch.json'
 
     proc = subprocess.run([
         sys.executable, str(QUEUE_SCRIPT),

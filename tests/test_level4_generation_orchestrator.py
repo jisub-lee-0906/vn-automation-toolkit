@@ -77,7 +77,7 @@ def test_generation_orchestrator_runs_generate_items_and_writes_qa_reports(tmp_p
         "print('RUN_ID fake_sfx_run'); print('METADATA', meta_path)\n",
         encoding='utf-8',
     )
-    out = tmp_path / 'generation_batch.json'
+    out = project / 'docs/automation/generation_batch.json'
     proc = subprocess.run([
         sys.executable, str(ORCH_SCRIPT),
         '--project-root', str(project),
@@ -141,7 +141,7 @@ def test_generation_orchestrator_passes_scene_event_source_char_base_metadata(tm
         "print('RUN_ID fake_event_run'); print('METADATA', meta_path)\n",
         encoding='utf-8',
     )
-    out = tmp_path / 'generation_batch.json'
+    out = project / 'docs/automation/generation_batch.json'
     proc = subprocess.run([
         sys.executable, str(ORCH_SCRIPT),
         '--project-root', str(project),

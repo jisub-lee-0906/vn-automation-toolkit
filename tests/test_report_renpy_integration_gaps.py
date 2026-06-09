@@ -40,8 +40,10 @@ def test_report_contains_integrated_and_file_only_assets(tmp_path: Path):
         ],
     }
     (game / 'data/asset_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+    (project / 'docs/automation').mkdir(parents=True, exist_ok=True)
+    (project / 'docs/automation/project_contract.json').write_text(json.dumps({'renpy_project_root': str(project), 'renpy_game_dir': str(game), 'manifest_path': str(game / 'data/asset_manifest.json')}), encoding='utf-8')
 
-    out = tmp_path / 'report.json'
+    out = project / 'docs/automation/report.json'
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), '--project-root', str(project), '--json-out', str(out)],
         cwd=ROOT,

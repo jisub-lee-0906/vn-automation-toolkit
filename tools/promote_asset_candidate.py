@@ -155,21 +155,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--replace-existing', action='store_true', help='Allow replacing an existing manifest entry with the same asset_id.')
     args = parser.parse_args(argv)
 
-    paths = build_project_paths(args.project_root, args.contract)
-    game_dir = paths.game_dir
-    manifest_path = paths.manifest
-
     if not args.approved:
         print('PROMOTE_REFUSED: missing --approved explicit approval flag')
         return 2
 
-    metadata_path = Path(args.metadata)
+    paths = build_project_paths(args.project_root, args.contract)
+    game_dir = paths.game_dir
+    manifest_path = paths.manifest
+
+    metadata_path = Path(args.metadata).resolve()
+    try:
+        require_under(metadata_path, paths.project_root, 'metadata')
+    except ValueError as exc:
+        print(f'PROMOTE_REFUSED: {exc}')
+        return 2
     if not metadata_path.exists():
         print(f'PROMOTE_FAILED: metadata not found: {metadata_path}')
         return 1
     metadata = load_json(metadata_path)
     asset_type = args.asset_type or metadata.get('asset_type') or metadata.get('workflow_id') or 'image'
-    src = first_existing_candidate(metadata)
+    src = first_existing_candidate(metadata).resolve()
+    try:
+        require_under(src, paths.project_root, 'candidate source')
+    except ValueError as exc:
+        print(f'PROMOTE_REFUSED: {exc}')
+        return 2
 
     if args.dest_dir:
         dest_dir = game_dir / args.dest_dir
@@ -191,9 +201,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f'PROMOTE_REFUSED: manifest asset_id already exists: {args.asset_id} (use --replace-existing to update it)')
             return 2
 
-    qa_report_path = Path(args.qa_report) if args.qa_report else discover_pass_qa_report(metadata, metadata_path)
+    qa_report_path = Path(args.qa_report).resolve() if args.qa_report else discover_pass_qa_report(metadata, metadata_path)
     if not qa_report_path:
         print('PROMOTE_REFUSED: missing --qa-report passing QA evidence')
+        return 2
+    try:
+        require_under(qa_report_path, paths.project_root, 'QA report')
+    except ValueError as exc:
+        print(f'PROMOTE_REFUSED: {exc}')
         return 2
     if not qa_report_path.exists():
         print(f'PROMOTE_REFUSED: QA report not found: {qa_report_path}')

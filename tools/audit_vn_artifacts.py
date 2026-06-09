@@ -7,6 +7,13 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / 'tools'
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+from vn_product_config import build_project_paths, resolve_project_path  # noqa: E402
 
 RUNTIME_JUNK_NAMES = {
     '.pytest_cache',
@@ -221,17 +228,21 @@ def render_text(audit: dict[str, Any]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Audit VN automation artifacts, preview evidence, and git-status categories.')
-    parser.add_argument('--project-root', default='.', help='RenPy/VN project root')
+    parser.add_argument('--project-root', default=None, help='RenPy/VN project root')
+    parser.add_argument('--contract')
     parser.add_argument('--json-out', help='Optional JSON report path')
     parser.add_argument('--strict', action='store_true', help='Fail if preview evidence is missing or runtime junk appears in git status')
     args = parser.parse_args(argv)
 
-    project_root = Path(args.project_root).resolve()
+    paths = build_project_paths(args.project_root, args.contract)
+    project_root = paths.project_root
     audit = build_audit(project_root)
     if args.json_out:
-        out = Path(args.json_out)
-        if not out.is_absolute():
-            out = project_root / out
+        try:
+            out = resolve_project_path(project_root, args.json_out, 'json-out')
+        except ValueError as exc:
+            print(f'AUDIT_REFUSED: {exc}')
+            return 2
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(audit, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(render_text(audit), end='')

@@ -100,7 +100,7 @@ def test_sync_obsidian_scene_notes_extracts_and_resolves_batch(tmp_path: Path):
     )
     (scenes / 'empty.md').write_text('# Empty\n\nNo required assets.\n', encoding='utf-8')
 
-    summary = tmp_path / 'batch.json'
+    summary = project / 'docs/automation/batch.json'
     proc = subprocess.run([
         sys.executable, str(SYNC_SCRIPT),
         '--project-root', str(project),
@@ -152,8 +152,8 @@ def test_build_owner_review_queue_from_resolved_requests(tmp_path: Path):
             },
         ],
     })
-    out_md = tmp_path / 'owner_review_queue.md'
-    out_json = tmp_path / 'owner_review_queue.json'
+    out_md = project / 'docs/production/owner_review_queue.md'
+    out_json = project / 'docs/production/owner_review_queue.json'
     proc = subprocess.run([
         sys.executable, str(QUEUE_SCRIPT),
         '--project-root', str(project),

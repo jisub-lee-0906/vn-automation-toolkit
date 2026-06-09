@@ -20,6 +20,9 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'generate': ('run_generation_queue.py', 'Run workflow generation for queued generate decisions.'),
     'promote': ('promote_asset_candidate.py', 'Promote an approved candidate into RenPy assets and manifest.'),
     'verify': ('verify_vn_automation_runtime.py', 'Run product/runtime verification gates.'),
+    'preflight': ('preflight_vn_project.py', 'Run fail-closed cross-game project readiness checks.'),
+    'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
+    'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
     'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
 }
@@ -45,7 +48,9 @@ def dispatch(command: str, args: Sequence[str]) -> int:
     if not script.exists():
         print(f'vn-auto: missing command script: {script}', file=sys.stderr)
         return 2
-    completed = subprocess.run([sys.executable, str(script), *args], cwd=ROOT)
+    # Preserve the caller's cwd so tools can use cwd-based project selection
+    # when it contains docs/automation/project_contract.json.
+    completed = subprocess.run([sys.executable, str(script), *args])
     return completed.returncode
 
 

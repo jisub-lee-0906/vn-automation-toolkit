@@ -61,6 +61,7 @@ def test_fresh_game_can_be_bootstrapped_synced_queued_and_static_verified(tmp_pa
         '--project-root', str(project),
         '--workflow-pack-root', str(workflow_pack),
         '--obsidian-vault', str(vault),
+        '--obsidian-project-root', str(vault / 'VN'),
         '--renpy-sdk-exe', str(renpy),
     )
     assert init.returncode == 0, init.stdout + init.stderr
@@ -121,6 +122,7 @@ def test_sync_rejects_notes_glob_that_escapes_title_root(tmp_path: Path):
         '--project-root', str(project),
         '--workflow-pack-root', str(workflow_pack),
         '--obsidian-vault', str(vault),
+        '--obsidian-project-root', str(vault / 'VN'),
         '--renpy-sdk-exe', str(renpy),
     )
     assert init.returncode == 0, init.stdout + init.stderr

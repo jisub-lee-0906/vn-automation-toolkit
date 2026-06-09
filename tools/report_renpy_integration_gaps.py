@@ -13,7 +13,7 @@ TOOLS = ROOT / 'tools'
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
-from vn_product_config import build_project_paths  # noqa: E402
+from vn_product_config import build_project_paths, resolve_project_path  # noqa: E402
 
 IMAGE_LINE_RE = re.compile(r'^\s*image\s+([^=]+?)\s*=\s*(.+?)\s*$')
 STRING_RE = re.compile(r'"([^"]+)"|\'([^\']+)\'')
@@ -104,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     paths = build_project_paths(args.project_root, args.contract)
     report = build_report(paths.project_root, paths.game_dir, paths.manifest)
     if args.json_out:
-        out = Path(args.json_out)
+        try:
+            out = resolve_project_path(paths.project_root, args.json_out, 'json-out')
+        except ValueError as exc:
+            print(f'GAPS_REFUSED: {exc}')
+            return 2
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('REPORT_RENPY_INTEGRATION_GAPS')

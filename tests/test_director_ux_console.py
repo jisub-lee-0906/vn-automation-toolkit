@@ -60,6 +60,7 @@ def bootstrap_moonlit_library(tmp_path: Path) -> tuple[Path, Path]:
         '--project-root', str(project),
         '--workflow-pack-root', str(workflow_pack),
         '--obsidian-vault', str(vault),
+        '--obsidian-project-root', str(vault / 'VN'),
         '--renpy-sdk-exe', str(renpy),
     )
     assert init.returncode == 0, init.stdout + init.stderr

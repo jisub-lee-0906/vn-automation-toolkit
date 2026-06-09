@@ -15,6 +15,8 @@ def make_promote_project(tmp_path: Path, *, with_qa: bool = False, qa_status: st
     project = tmp_path / 'project'
     (project / 'game/data').mkdir(parents=True, exist_ok=True)
     (project / 'game/data/asset_manifest.json').write_text(json.dumps({'assets': []}), encoding='utf-8')
+    (project / 'docs/automation').mkdir(parents=True, exist_ok=True)
+    (project / 'docs/automation/project_contract.json').write_text(json.dumps({'renpy_project_root': str(project), 'renpy_game_dir': str(project / 'game'), 'manifest_path': str(project / 'game/data/asset_manifest.json')}), encoding='utf-8')
     candidate = project / 'docs/automation/generated_candidates/candidate.png'
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_bytes(b'candidate')
