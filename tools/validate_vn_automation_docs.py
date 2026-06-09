@@ -56,7 +56,6 @@ REQUIRED_PROJECT_RELS = [
     'docs/automation/qa_checklist.md',
     'docs/automation/schemas/asset_manifest.schema.json',
     'docs/automation/schemas/character_asset.schema.json',
-    'game/data/asset_manifest.json',
 ]
 REQUIRED_OBSIDIAN_RELS = [
     '00_Index.md',
@@ -118,22 +117,26 @@ def validate_contract(paths, errors: list[str]) -> None:
     for key in REQUIRED_CONTRACT_METADATA_KEYS:
         if not contract.get(key):
             errors.append(f'CONTRACT missing key {key}')
-    workflow_index = Path(contract.get('workflow_index', ''))
+    workflow_index_raw = contract.get('workflow_index')
     workflow_root = Path(contract.get('workflow_pack_root', ''))
-    if workflow_index.exists():
-        data = json.loads(workflow_index.read_text(encoding='utf-8'))
-        ids = []
-        for wf in data.get('workflows', []):
-            ids.append(wf.get('id'))
-            for key in ['readme', 'api']:
-                rel = wf.get(key)
-                if rel and not (workflow_root / rel).exists():
-                    errors.append(f'WORKFLOW {wf.get("id")} missing {key}: {rel}')
-            if not wf.get('editable_fields'):
-                errors.append(f'WORKFLOW {wf.get("id")} has no editable_fields')
-        missing = EXPECTED_WORKFLOW_IDS - set(ids)
-        if missing:
-            errors.append(f'WORKFLOW_INDEX missing ids: {sorted(missing)}')
+    if workflow_index_raw:
+        workflow_index = Path(workflow_index_raw)
+        if workflow_index.exists() and workflow_index.is_file():
+            data = json.loads(workflow_index.read_text(encoding='utf-8'))
+            ids = []
+            for wf in data.get('workflows', []):
+                ids.append(wf.get('id'))
+                for key in ['readme', 'api']:
+                    rel = wf.get(key)
+                    if rel and not (workflow_root / rel).exists():
+                        errors.append(f'WORKFLOW {wf.get("id")} missing {key}: {rel}')
+                if not wf.get('editable_fields'):
+                    errors.append(f'WORKFLOW {wf.get("id")} has no editable_fields')
+            missing = EXPECTED_WORKFLOW_IDS - set(ids)
+            if missing:
+                errors.append(f'WORKFLOW_INDEX missing ids: {sorted(missing)}')
+        elif workflow_index.exists():
+            errors.append(f'WORKFLOW_INDEX is not a file: {workflow_index}')
 
 
 def validate_design(project_root: Path, errors: list[str]) -> None:

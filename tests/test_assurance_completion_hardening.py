@@ -241,3 +241,84 @@ def test_manifest_validation_rejects_unsafe_identity_and_paths(tmp_path: Path):
     assert 'unsafe asset_id' in text
     assert 'unsafe renpy_name' in text
     assert 'unsafe promoted_path' in text
+
+
+
+def test_sync_uses_contract_manifest_path_not_legacy_game_data(tmp_path: Path):
+    project = make_project(tmp_path)
+    legacy_manifest = project / 'game/data/asset_manifest.json'
+    if legacy_manifest.exists():
+        legacy_manifest.unlink()
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    contract_manifest = project / 'docs/automation/asset_manifest.json'
+    write_json(contract_manifest, {'version': '1.0.0', 'assets': []})
+    contract['manifest_path'] = contract_manifest.as_posix()
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    obs_root = tmp_path / 'obsidian' / 'assurance_title' / 'VN'
+    note = obs_root / 'Scenes/scene_contract_manifest_probe.md'
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("""---
+scene_id: scene_contract_manifest_probe
+---
+
+# Probe
+
+## Required Assets
+
+- [ ] background: contract_manifest_probe_bg | empty red chamber background
+""", encoding='utf-8')
+
+    proc = run_cli('sync', '--project-root', str(project))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    resolved = project / 'docs/production/asset_requests/scene_contract_manifest_probe.resolved_asset_requests.json'
+    assert resolved.exists()
+    data = json.loads(resolved.read_text(encoding='utf-8'))
+    assert data['manifest_path'] == str(contract_manifest.resolve())
+    assert data['resolved_asset_requests'][0]['decision'] == 'generate'
+
+
+
+def test_validate_reports_missing_workflow_index_without_traceback(tmp_path: Path):
+    project = make_project(tmp_path)
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    contract.pop('workflow_index', None)
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+    proc = run_cli('validate', '--project-root', str(project), '--skip-obsidian')
+    assert proc.returncode == 1
+    text = proc.stdout + proc.stderr
+    assert 'CONTRACT missing key workflow_index' in text
+    assert 'Traceback' not in text
+    assert 'PermissionError' not in text
+
+
+
+def test_validate_accepts_contract_manifest_outside_legacy_game_data(tmp_path: Path):
+    project = make_project(tmp_path)
+    legacy_manifest = project / 'game/data/asset_manifest.json'
+    if legacy_manifest.exists():
+        legacy_manifest.unlink()
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    contract_manifest = project / 'docs/automation/asset_manifest.json'
+    write_json(contract_manifest, {'version': '1.0.0', 'assets': []})
+    contract['manifest_path'] = contract_manifest.as_posix()
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    design = project / 'docs/automation/vn_automation_design.md'
+    design.parent.mkdir(parents=True, exist_ok=True)
+    design.write_text('# Design\n\n## 1. 목표\n\n## 2. 고정 경로\n\n## 3. 역할 분담\n\n## 4. 데이터 흐름\n\n## 7. Workflow routing\n\n## 11. QA gates\n\n## 13. 첫 투입 milestone\n\n## 14. 금지 사항\n', encoding='utf-8')
+    for rel in [
+        'docs/automation/templates/Scene_Note_Template.md',
+        'docs/automation/templates/Character_Note_Template.md',
+        'docs/automation/templates/Asset_Request_Template.md',
+        'docs/automation/qa_checklist.md',
+        'docs/automation/schemas/asset_manifest.schema.json',
+        'docs/automation/schemas/character_asset.schema.json',
+    ]:
+        path = project / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{}\n', encoding='utf-8')
+    proc = run_cli('validate', '--project-root', str(project), '--skip-obsidian')
+    assert 'MISSING game/data/asset_manifest.json' not in (proc.stdout + proc.stderr)

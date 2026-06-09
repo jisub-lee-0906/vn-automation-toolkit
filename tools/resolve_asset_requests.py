@@ -276,17 +276,19 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
 
 
 def build_resolution(args: argparse.Namespace) -> dict[str, Any]:
-    root = Path(args.project_root).resolve() if args.project_root else ROOT
+    project_paths = build_project_paths(args.project_root, args.contract)
+    root = project_paths.project_root
     requests_path = Path(args.asset_requests).resolve()
     require_under(requests_path, root, 'asset_requests')
-    manifest_path = resolve_project_path(root, args.manifest, 'manifest') if args.manifest else root / DEFAULT_MANIFEST.relative_to(ROOT)
-    contract_path = resolve_project_path(root, args.contract, 'contract') if args.contract else root / DEFAULT_CONTRACT.relative_to(ROOT)
-    generation_runs_root = resolve_project_path(root, args.generation_runs_root, 'generation-runs-root') if args.generation_runs_root else root / DEFAULT_GENERATION_RUNS_ROOT.relative_to(ROOT)
+    manifest_path = resolve_project_path(root, args.manifest, 'manifest') if args.manifest else project_paths.manifest
+    contract_path = resolve_project_path(root, args.contract, 'contract') if args.contract else project_paths.contract_file
+    generation_runs_root = resolve_project_path(root, args.generation_runs_root, 'generation-runs-root') if args.generation_runs_root else project_paths.generation_runs_root
 
     requests_data = load_json(requests_path)
     manifest = load_json(manifest_path)
     routes = load_workflow_routes(contract_path)
     resolutions = [resolve_request(root, manifest, routes, generation_runs_root, req) for req in requests_data.get('asset_requests', [])]
+
     counts: dict[str, int] = {}
     for item in resolutions:
         counts[item['decision']] = counts.get(item['decision'], 0) + 1
