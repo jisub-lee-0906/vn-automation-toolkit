@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -64,6 +65,16 @@ REQUIRED_OBSIDIAN_RELS = [
     'Templates/Character_Note_Template.md',
     'Templates/Asset_Request_Template.md',
 ]
+
+SAFE_ASSET_ID_RE = re.compile(r'^[a-z][a-z0-9_]{1,80}$')
+SAFE_RENPY_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*( [a-z0-9_]+)*$')
+
+
+def is_safe_project_relative_path(value: str) -> bool:
+    normalized = str(value).replace('\\', '/')
+    parts = normalized.split('/')
+    return bool(value) and not Path(value).is_absolute() and not normalized.startswith('/') and ':' not in normalized and '..' not in parts and not any(ord(ch) < 32 for ch in value)
+
 REQUIRED_ASSET_KEYS = {
     'asset_id',
     'asset_type',
@@ -156,13 +167,20 @@ def validate_manifest(paths, errors: list[str]) -> None:
         if missing:
             errors.append(f'asset_manifest.assets[{idx}] missing keys: {sorted(missing)}')
         asset_id = asset.get('asset_id')
+        if not isinstance(asset_id, str) or not SAFE_ASSET_ID_RE.fullmatch(asset_id):
+            errors.append(f'asset_manifest.assets[{idx}] unsafe asset_id: {asset_id}')
+        renpy_name = asset.get('renpy_name')
+        if not isinstance(renpy_name, str) or not SAFE_RENPY_NAME_RE.fullmatch(renpy_name):
+            errors.append(f'asset_manifest.assets[{idx}] unsafe renpy_name: {renpy_name!r}')
         if asset_id in seen:
             errors.append(f'asset_manifest duplicate asset_id: {asset_id}')
         seen.add(asset_id)
         promoted = asset.get('promoted_path')
         if promoted:
-            p = Path(promoted)
-            target = p if p.is_absolute() else paths.game_dir / promoted
+            if not isinstance(promoted, str) or not is_safe_project_relative_path(promoted):
+                errors.append(f'asset_manifest.assets[{idx}] unsafe promoted_path: {promoted}')
+                continue
+            target = paths.game_dir / promoted
             if not target.exists():
                 errors.append(f'asset_manifest promoted_path missing: {promoted}')
 

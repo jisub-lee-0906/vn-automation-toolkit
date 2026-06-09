@@ -64,6 +64,7 @@ def test_formal_invariants_document_exists_and_declares_scope():
         'Invariant I3 — CLI Project Outputs Stay Under Project Root',
         'Invariant I4 — Project Inputs Cannot Cross Titles',
         'Invariant I5 — Capture Plans Are Bounded And Project-Local',
+        'Invariant I6 — Promotion And Generation Surfaces Are Identity-Safe',
         'Out of Scope',
         'Assurance Evidence Matrix',
     ]

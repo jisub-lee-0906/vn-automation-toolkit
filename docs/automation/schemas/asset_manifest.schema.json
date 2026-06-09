@@ -5,12 +5,67 @@
     "version",
     "assets"
   ],
+  "additionalProperties": true,
   "properties": {
     "version": {
       "type": "string"
     },
     "assets": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "asset_type",
+          "workflow_id",
+          "generated_path",
+          "promoted_path",
+          "qa_status",
+          "renpy_name",
+          "scene_usage",
+          "metadata"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,80}$"
+          },
+          "asset_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "generated_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "promoted_path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+"
+          },
+          "qa_status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "renpy_name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*( [a-z0-9_]+)*$"
+          },
+          "scene_usage": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_ -]+$"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
     }
   }
 }

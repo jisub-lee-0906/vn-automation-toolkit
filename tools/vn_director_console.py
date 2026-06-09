@@ -21,10 +21,19 @@ from build_owner_review_queue import build_queue, render_markdown, save_json as 
 from promote_asset_candidate import main as promote_asset_main  # noqa: E402
 from resolve_asset_requests import build_resolution, save_json as save_resolution_json  # noqa: E402
 from sync_obsidian_scene_asset_requests import sync_notes  # noqa: E402
-from vn_product_config import require_under  # noqa: E402
+from vn_product_config import build_project_paths, require_under  # noqa: E402
 
 SLUG_RE = re.compile(r'[^a-z0-9_]+')
 
+
+
+
+def director_paths(args: argparse.Namespace):
+    return build_project_paths(args.project_root, getattr(args, 'contract', None))
+
+
+def director_project_root(args: argparse.Namespace) -> Path:
+    return director_paths(args).project_root
 
 def slugify(value: str) -> str:
     slug = SLUG_RE.sub('_', value.strip().lower().replace('-', '_')).strip('_')
@@ -79,21 +88,20 @@ def load_contract(project_root: Path) -> dict[str, Any]:
 
 def contract_vault(project_root: Path, explicit: str | None = None) -> Path:
     contract = load_contract(project_root)
-    if explicit:
-        root = Path(explicit).resolve()
-        # Backward compatibility: --vault historically meant the Obsidian vault root,
-        # while new-scene writes under the title project root that contains Scenes/.
-        # If the caller wants to pass the project root directly, pass the .../VN path.
-        if root.name != 'VN':
-            root = root / 'VN'
-        return root
     raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault')
     if not raw:
         raise ValueError('missing Obsidian project root: pass --vault or run init with --obsidian-vault')
-    root = Path(raw).resolve()
-    if not contract.get('obsidian_project_root') and root.name != 'VN':
-        root = root / 'VN'
-    return root
+    expected = Path(raw).resolve()
+    if not contract.get('obsidian_project_root') and expected.name != 'VN':
+        expected = expected / 'VN'
+    if explicit:
+        root = Path(explicit).resolve()
+        if root.name != 'VN':
+            root = root / 'VN'
+        if root.resolve() != expected.resolve():
+            raise ValueError(f'explicit --vault must match active project obsidian_project_root: {expected}')
+        return root.resolve()
+    return expected.resolve()
 
 
 def contract_scenes_glob(project_root: Path) -> str:
@@ -119,7 +127,7 @@ def recent_director_cards(project_root: Path) -> list[Path]:
 
 
 def status(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     contract = load_contract(project_root)
     vault_raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault') or ''
     vault = Path(vault_raw) if vault_raw else None
@@ -494,7 +502,7 @@ def render_telegram_review_card(project_root: Path, items: list[dict[str, Any]])
 
 
 def telegram_review(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     re_resolve_asset_requests(project_root)
     queue_data = refresh_queue(project_root)
     items = build_telegram_review_items(project_root, queue_data)
@@ -569,7 +577,7 @@ def promote_telegram_item(project_root: Path, registry: dict[str, Any], item: di
 
 
 def telegram_approve(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     if not args.approved:
         print('TELEGRAM_APPROVE_REFUSED: missing --approved explicit owner approval flag')
         return 2
@@ -593,7 +601,7 @@ def telegram_approve(args: argparse.Namespace) -> int:
 
 
 def telegram_bind_message(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     token = args.token.strip().upper()
     registry = load_registry(project_root)
     item = next((entry for entry in registry.get('items', []) if str(entry.get('token', '')).upper() == token), None)
@@ -620,7 +628,7 @@ def telegram_bind_message(args: argparse.Namespace) -> int:
 
 
 def telegram_approve_message(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     if not args.approved:
         print('TELEGRAM_APPROVE_REFUSED: missing --approved explicit owner approval flag')
         return 2
@@ -650,7 +658,7 @@ def telegram_approve_message(args: argparse.Namespace) -> int:
 
 
 def review_assets(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     re_resolve_asset_requests(project_root)
     queue_data = refresh_queue(project_root)
     card = project_root / 'docs/production/director_cards/asset_review.md'
@@ -673,9 +681,14 @@ def review_assets(args: argparse.Namespace) -> int:
 
 
 def preview(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     scene_id = slugify(args.scene_id)
     screenshot = Path(args.screenshot).resolve()
+    try:
+        require_under(screenshot, project_root / 'docs/production/screenshots', 'preview screenshot')
+    except ValueError as exc:
+        print(f'PREVIEW_REFUSED: {exc}')
+        return 2
     if not screenshot.exists():
         print(f'PREVIEW_FAILED: screenshot not found: {screenshot}')
         return 1
@@ -706,7 +719,7 @@ def preview(args: argparse.Namespace) -> int:
 
 
 def approve_candidate(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     if not args.approved:
         print('APPROVE_REFUSED: missing --approved explicit owner approval flag')
         return 2
@@ -761,18 +774,25 @@ def approve_candidate(args: argparse.Namespace) -> int:
 
 
 def new_scene(args: argparse.Namespace) -> int:
-    project_root = Path(args.project_root).resolve()
+    project_root = director_project_root(args)
     try:
         vault = contract_vault(project_root, args.vault)
         assets = [parse_asset(raw) for raw in args.asset]
     except ValueError as exc:
-        print(f'DIRECTOR_FAILED: {exc}')
-        return 1
+        print(f'DIRECTOR_REFUSED: {exc}')
+        return 2
 
     scene_id = slugify(args.scene_id)
     title = args.title or scene_id.replace('_', ' ').title()
     note = vault / 'Scenes' / f'{scene_id}.md'
     draft = project_root / 'game/scripts' / f'{scene_id}.rpy' if args.playable_placeholder else None
+    try:
+        require_under(note, vault, 'Obsidian scene note')
+        if draft:
+            require_under(draft, project_root / 'game', 'RenPy scene draft')
+    except ValueError as exc:
+        print(f'DIRECTOR_REFUSED: {exc}')
+        return 2
     protected_existing = [path for path in [note, draft] if path and path.exists()]
     if protected_existing and not args.force:
         print('DIRECTOR_REFUSED: scene output already exists; use --force to overwrite derived scene files')
@@ -828,12 +848,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Director-facing UX console for supervised VN production.')
     sub = parser.add_subparsers(dest='command', required=True)
 
+    def add_project(parser_obj: argparse.ArgumentParser) -> None:
+        parser_obj.add_argument('--project-root', required=True)
+        parser_obj.add_argument('--contract', default=None)
+
     status_parser = sub.add_parser('status', help='Show project-agnostic production dashboard.')
-    status_parser.add_argument('--project-root', required=True)
+    add_project(status_parser)
     status_parser.set_defaults(func=status)
 
     scene_parser = sub.add_parser('new-scene', help='Create a supervised scene note, optional placeholder draft, and approval cards.')
-    scene_parser.add_argument('--project-root', required=True)
+    add_project(scene_parser)
     scene_parser.add_argument('--vault', default=None)
     scene_parser.add_argument('--scene-id', required=True)
     scene_parser.add_argument('--title', default='')
@@ -846,22 +870,22 @@ def build_parser() -> argparse.ArgumentParser:
     scene_parser.set_defaults(func=new_scene)
 
     review_parser = sub.add_parser('review-assets', help='Build director asset candidate cards and static local HTML dashboard.')
-    review_parser.add_argument('--project-root', required=True)
+    add_project(review_parser)
     review_parser.set_defaults(func=review_assets)
 
     preview_parser = sub.add_parser('preview', help='Register a RenPy screenshot/preview evidence card for a scene.')
-    preview_parser.add_argument('--project-root', required=True)
+    add_project(preview_parser)
     preview_parser.add_argument('--scene-id', required=True)
     preview_parser.add_argument('--screenshot', required=True)
     preview_parser.add_argument('--note', default='')
     preview_parser.set_defaults(func=preview)
 
     telegram_review_parser = sub.add_parser('telegram-review', help='Prepare tokened Telegram approval registry and review card.')
-    telegram_review_parser.add_argument('--project-root', required=True)
+    add_project(telegram_review_parser)
     telegram_review_parser.set_defaults(func=telegram_review)
 
     telegram_approve_parser = sub.add_parser('telegram-approve', help='Consume an exact tokened Telegram approval phrase and promote the candidate.')
-    telegram_approve_parser.add_argument('--project-root', required=True)
+    add_project(telegram_approve_parser)
     telegram_approve_parser.add_argument('--token', required=True)
     telegram_approve_parser.add_argument('--approved-text', required=True)
     telegram_approve_parser.add_argument('--message-id', default='')
@@ -875,14 +899,14 @@ def build_parser() -> argparse.ArgumentParser:
     telegram_approve_parser.set_defaults(func=telegram_approve)
 
     bind_parser = sub.add_parser('telegram-bind-message', help='Bind a pending token to the Telegram review message_id that displayed the candidate.')
-    bind_parser.add_argument('--project-root', required=True)
+    add_project(bind_parser)
     bind_parser.add_argument('--token', required=True)
     bind_parser.add_argument('--message-id', required=True)
     bind_parser.add_argument('--chat-id', default='')
     bind_parser.set_defaults(func=telegram_bind_message)
 
     approve_msg_parser = sub.add_parser('telegram-approve-message', help='Approve by reply_to_message_id, allowing plain approval text after a candidate message is bound.')
-    approve_msg_parser.add_argument('--project-root', required=True)
+    add_project(approve_msg_parser)
     approve_msg_parser.add_argument('--reply-to-message-id', required=True)
     approve_msg_parser.add_argument('--approved-text', required=True)
     approve_msg_parser.add_argument('--approval-message-id', default='')
@@ -896,7 +920,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve_msg_parser.set_defaults(func=telegram_approve_message)
 
     approve_parser = sub.add_parser('approve-candidate', help='Promote an explicitly approved candidate and refresh review queues.')
-    approve_parser.add_argument('--project-root', required=True)
+    add_project(approve_parser)
     approve_parser.add_argument('--metadata', required=True)
     approve_parser.add_argument('--asset-id', required=True)
     approve_parser.add_argument('--renpy-name', required=True)
@@ -911,7 +935,6 @@ def build_parser() -> argparse.ArgumentParser:
     approve_parser.add_argument('--approved', action='store_true')
     approve_parser.set_defaults(func=approve_candidate)
     return parser
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -13,6 +15,49 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from vn_product_config import build_project_paths, require_under  # noqa: E402
+
+SAFE_ASSET_ID_RE = re.compile(r'^[a-z][a-z0-9_]{1,80}$')
+SAFE_RENPY_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*( [a-z0-9_]+)*$')
+WINDOWS_RESERVED_NAMES = {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}
+
+
+def validate_asset_id(value: str) -> None:
+    if not SAFE_ASSET_ID_RE.fullmatch(value or ''):
+        raise ValueError(f'unsafe asset_id: {value!r}')
+
+
+def validate_renpy_name(value: str) -> None:
+    if not SAFE_RENPY_NAME_RE.fullmatch(value or ''):
+        raise ValueError(f'unsafe renpy_name: {value!r}')
+
+
+def validate_safe_filename(value: str, label: str = 'filename') -> str:
+    if not value or value != Path(value).name or any(sep in value for sep in ['/', '\\']) or ':' in value or any(ord(ch) < 32 for ch in value):
+        raise ValueError(f'unsafe {label}: {value!r}')
+    if value[-1:] in {'.', ' '}:
+        raise ValueError(f'unsafe {label} trailing dot/space: {value!r}')
+    stem = value.split('.', 1)[0].upper()
+    if stem in WINDOWS_RESERVED_NAMES:
+        raise ValueError(f'unsafe {label} reserved Windows device name: {value!r}')
+    return value
+
+
+def atomic_write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, indent=2) + '\n'
+    tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    tmp.write_text(payload, encoding='utf-8')
+    os.replace(tmp, path)
+
+
+def backup_existing(dest: Path, backups_root: Path) -> Path | None:
+    if not dest.exists():
+        return None
+    backups_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    backup = backups_root / f'{dest.stem}_{stamp}{dest.suffix}'
+    shutil.copy2(dest, backup)
+    return backup
 
 DEST_BY_TYPE = {
     'background': 'images/backgrounds',
@@ -35,7 +80,7 @@ def load_json(path: Path) -> dict:
 
 
 def save_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    atomic_write_json(path, data)
 
 
 def ensure_under(child: Path, parent: Path) -> None:
@@ -159,6 +204,15 @@ def main(argv: list[str] | None = None) -> int:
         print('PROMOTE_REFUSED: missing --approved explicit approval flag')
         return 2
 
+    try:
+        validate_asset_id(args.asset_id)
+        validate_renpy_name(args.renpy_name)
+        if args.filename:
+            validate_safe_filename(args.filename)
+    except ValueError as exc:
+        print(f'PROMOTE_REFUSED: {exc}')
+        return 2
+
     paths = build_project_paths(args.project_root, args.contract)
     game_dir = paths.game_dir
     manifest_path = paths.manifest
@@ -188,7 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     require_under(dest_dir, game_dir, 'destination directory')
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    filename = args.filename or src.name
+    try:
+        filename = validate_safe_filename(args.filename or src.name)
+    except ValueError as exc:
+        print(f'PROMOTE_REFUSED: {exc}')
+        return 2
     dest = dest_dir / filename
     require_under(dest, game_dir, 'destination file')
     if dest.exists() and not args.force_overwrite:
@@ -220,7 +278,15 @@ def main(argv: list[str] | None = None) -> int:
         print('qa_status', qa_report.get('status'))
         return 2
 
-    shutil.copy2(src, dest)
+    backup_path = backup_existing(dest, paths.promotions_root / 'backups') if dest.exists() and args.force_overwrite else None
+    tmp_dest = dest.with_name(f'.{dest.name}.{os.getpid()}.tmp')
+    try:
+        shutil.copy2(src, tmp_dest)
+        os.replace(tmp_dest, dest)
+    except Exception:
+        if tmp_dest.exists():
+            tmp_dest.unlink()
+        raise
 
     promoted_rel = dest.relative_to(game_dir).as_posix()
     generated_path = src.as_posix()
@@ -248,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
 
     paths.promotions_root.mkdir(parents=True, exist_ok=True)
     log = paths.promotions_root / f'{now.replace(":", "")}_{args.asset_id}.json'
-    save_json(log, {'action': action, 'manifest_entry': entry, 'source_file': str(src), 'destination_file': str(dest)})
+    save_json(log, {'action': action, 'manifest_entry': entry, 'source_file': str(src), 'destination_file': str(dest), 'backup_path': str(backup_path) if backup_path else None})
     mark_metadata_promoted(metadata_path, metadata, entry, log)
 
     print('PROMOTE_ASSET_CANDIDATE')

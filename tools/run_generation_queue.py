@@ -135,7 +135,7 @@ def qa_candidate_files(project_root: Path, metadata: dict[str, Any], asset_type:
     return reports
 
 
-def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> dict[str, Any]:
+def run_one(project_root: Path, item: dict[str, Any], runner_command: str, runner_timeout: int = 900) -> dict[str, Any]:
     workflow_id = str(item.get('workflow_id') or '')
     prompt_slots_path = prompt_slots_path_for(project_root, item) if workflow_id in PROMPT_SENSITIVE_WORKFLOWS else None
     if workflow_id in PROMPT_SENSITIVE_WORKFLOWS and prompt_slots_path is None:
@@ -161,7 +161,12 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> di
                 'reason': 'scene_event_cg_requires_source_char_base_metadata',
             }
         command += ['--char-base-metadata', str(source_char_base_metadata)]
-    proc = subprocess.run(command, cwd=project_root, text=True, capture_output=True, timeout=900)
+    try:
+        proc = subprocess.run(command, cwd=project_root, text=True, capture_output=True, timeout=runner_timeout)
+    except subprocess.TimeoutExpired as exc:
+        return {**item, 'command': command, 'status': 'failed_runner_timeout', 'timeout_seconds': runner_timeout, 'stdout': exc.stdout or '', 'stderr': exc.stderr or ''}
+    except FileNotFoundError as exc:
+        return {**item, 'command': command, 'status': 'failed_runner_not_found', 'reason': str(exc)}
     result: dict[str, Any] = {
         **item,
         'command': command,
@@ -203,7 +208,7 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str) -> di
     return result
 
 
-def build_batch(project_root: Path, resolved_glob: str, runners: dict[str, str], limit: int | None = None) -> dict[str, Any]:
+def build_batch(project_root: Path, resolved_glob: str, runners: dict[str, str], limit: int | None = None, runner_timeout: int = 900) -> dict[str, Any]:
     items = collect_generate_items(project_root, resolved_glob)
     if limit is not None:
         items = items[:limit]
@@ -215,7 +220,7 @@ def build_batch(project_root: Path, resolved_glob: str, runners: dict[str, str],
         if not runner:
             skipped.append({**item, 'reason': 'no_runner_for_workflow'})
             continue
-        results.append(run_one(project_root, item, runner))
+        results.append(run_one(project_root, item, runner, runner_timeout=runner_timeout))
     counts = {
         'requested': len(items),
         'generated': sum(1 for r in results if r.get('status') == 'generated'),
@@ -241,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--runner', action='append', help='Override runner as workflow_id=command')
     parser.add_argument('--limit', type=int)
     parser.add_argument('--out', default=None)
+    parser.add_argument('--runner-timeout', type=int, default=900, help='Per-item runner timeout in seconds.')
     args = parser.parse_args(argv)
 
     paths = build_project_paths(args.project_root, args.contract)
@@ -248,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         out_path = resolve_project_path(project_root, args.out, 'out') if args.out else (project_root / 'docs/automation/generation_queue_batch.json').resolve()
         runners = parse_runner_overrides(args.runner)
-        data = build_batch(project_root, args.resolved_glob, runners, args.limit)
+        data = build_batch(project_root, args.resolved_glob, runners, args.limit, runner_timeout=args.runner_timeout)
     except ValueError as exc:
         print(f'GENERATION_QUEUE_REFUSED: {exc}')
         return 2

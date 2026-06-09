@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from danbooru_taxonomy import validate_tags
+from vn_product_config import build_project_paths, require_under
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -197,7 +198,14 @@ def main() -> int:
     parser.add_argument('--prepare-only', action='store_true', help='Patch workflow and write metadata without submitting to ComfyUI.')
     parser.add_argument('--out-metadata', help='Metadata path for prepare-only/tests. Defaults to run_dir/metadata.json.')
     args = parser.parse_args()
-    project_root = Path(args.project_root)
+    project_paths = build_project_paths(args.project_root, None)
+    project_root = project_paths.project_root
+    if args.out_metadata:
+        try:
+            require_under(Path(args.out_metadata).expanduser().resolve(), project_root, 'out-metadata')
+        except ValueError as exc:
+            print(f'CHAR_BASE_REFUSED: {exc}')
+            return 2
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
     seed = args.seed

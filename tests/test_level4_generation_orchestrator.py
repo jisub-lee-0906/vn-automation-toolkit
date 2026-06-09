@@ -186,7 +186,7 @@ def test_audio_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_path: Pat
             'negative_prompt': 'music, speech, voice, singing, distorted',
         },
     })
-    out = tmp_path / 'prepared.json'
+    out = project / 'docs/automation/generation_runs/prepared.json'
     proc = subprocess.run([
         sys.executable, str(SFX_SCRIPT),
         '--project-root', str(project),

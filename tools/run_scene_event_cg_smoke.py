@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from danbooru_taxonomy import validate_tags
+from vn_product_config import build_project_paths, require_under
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -198,7 +199,14 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
-    project_root = Path(args.project_root)
+    project_paths = build_project_paths(args.project_root, None)
+    project_root = project_paths.project_root
+    if args.char_base_metadata:
+        try:
+            require_under(Path(args.char_base_metadata).expanduser().resolve(), project_root, 'char-base-metadata')
+        except ValueError as exc:
+            print(f'SCENE_EVENT_CG_REFUSED: {exc}')
+            return 2
     contract_path = project_root / 'docs/automation/project_contract.json'
     runs_root = project_root / 'docs/automation/generation_runs'
     prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
@@ -211,7 +219,7 @@ def main() -> int:
     workflow_path = workflow_root / "scene_event_cg/scene_event_cg_workflow_api.json"
     if not args.char_base_metadata:
         raise RuntimeError('SCENE_EVENT_CG_SOURCE_REQUIRED: pass --char-base-metadata for the approved/current source character base metadata; stale hardcoded run fallbacks are forbidden')
-    char_meta_path = Path(args.char_base_metadata)
+    char_meta_path = Path(args.char_base_metadata).expanduser().resolve()
     char_meta = load_json(char_meta_path)
 
     seed = args.seed if args.seed is not None else int(char_meta.get("scene_event_cg_seed_to_reuse") or char_meta["seed"])

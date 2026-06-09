@@ -118,6 +118,30 @@ Evidence:
 - `tests/test_cross_game_portability_hardening.py::test_capture_scene_refuses_runtime_when_dependencies_missing_even_with_fake_renpy`
 - `tests/test_cross_game_portability_hardening.py::test_validate_scene_runtime_failure_is_structured_without_traceback`
 
+
+## Invariant I6 — Promotion And Generation Surfaces Are Identity-Safe
+
+Promotion and direct generation-runner metadata surfaces now enforce additional production-safety constraints:
+
+- `promote --asset-id` must be a safe manifest/log slug.
+- `promote --renpy-name` must be a safe Ren'Py image name.
+- `promote --filename` must be a single safe filename component and must reject traversal, alternate data streams, Windows reserved device names, and control characters.
+- `promote --force-overwrite` must back up the overwritten production asset under `docs/production/promotions/backups/` before replacing it.
+- direct smoke runner `--out-metadata` outputs are project-confined.
+- `scene_event_cg --char-base-metadata` is project-confined.
+- generation runner timeout/failure is recorded per item as structured batch output rather than aborting with an unstructured traceback.
+- manifest validation rejects unsafe asset IDs, unsafe Ren'Py names, and unsafe promoted paths.
+
+Evidence:
+
+- `tests/test_assurance_completion_hardening.py::test_promote_rejects_unsafe_identity_and_filename_values`
+- `tests/test_assurance_completion_hardening.py::test_promote_force_overwrite_creates_backup`
+- `tests/test_assurance_completion_hardening.py::test_generation_runner_timeout_is_per_item_structured`
+- `tests/test_assurance_completion_hardening.py::test_direct_smoke_runner_refuses_out_metadata_outside_project`
+- `tests/test_assurance_completion_hardening.py::test_direct_smoke_runners_refuse_external_metadata_surfaces`
+- `tests/test_assurance_completion_hardening.py::test_scene_event_cg_refuses_external_char_base_metadata`
+- `tests/test_assurance_completion_hardening.py::test_manifest_validation_rejects_unsafe_identity_and_paths`
+
 ## Assurance Evidence Matrix
 
 The machine-readable command classification lives in:
@@ -168,7 +192,7 @@ python -m pytest tests/test_formal_assurance_invariants.py -q
 python -m pytest tests/test_cross_game_portability_hardening.py tests/test_formal_assurance_invariants.py -q
 38 passed
 python -m pytest -q
-98 passed
+109 passed
 python -m vn_automation.cli preflight --project-root E:/workspace/renpy-project/sihanbu_villainess_badend --skip-comfyui
 PREFLIGHT_PASSED
 python -m vn_automation.cli validate-scene --project-root E:/workspace/renpy-project/sihanbu_villainess_badend --scene-id scene_044_origin_interrogation_or_timestamp_trap --capture-plan E:/workspace/renpy-project/sihanbu_villainess_badend/docs/automation/capture_plans/scene_044_origin_interrogation_or_timestamp_trap.json --static-only --out-dir E:/workspace/renpy-project/sihanbu_villainess_badend/docs/validation/cross_game_validate_scene_scene044_20260609

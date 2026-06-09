@@ -14,6 +14,8 @@ import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from vn_product_config import build_project_paths, require_under
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -250,7 +252,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--out-metadata')
     args = parser.parse_args(argv)
 
-    project_root = Path(args.project_root).resolve()
+    project_paths = build_project_paths(args.project_root, None)
+    project_root = project_paths.project_root
+    if args.out_metadata:
+        try:
+            require_under(Path(args.out_metadata).expanduser().resolve(), project_root, 'out-metadata')
+        except ValueError as exc:
+            print(f'AUDIO_SFX_REFUSED: {exc}')
+            return 2
     raw_slots = Path(args.prompt_slots) if args.prompt_slots else None
     prompt_slots_path = resolve_prompt_slots_path(project_root, raw_slots) if raw_slots else None
     workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed, prompt_slots_path)

@@ -109,7 +109,7 @@ def test_scene_background_prepare_only_uses_agent_authored_prompt_slots_not_clas
         'negative_rationale': {'train_interior': 'avoid subway/train interior confusion'},
         'semantic_requirements': ['dawn first-bus interior', 'no people', 'no readable text'],
     })
-    meta = tmp_path / 'metadata.json'
+    meta = project / 'docs/automation/generation_runs/metadata.json'
 
     proc = subprocess.run([
         sys.executable, str(BG_SCRIPT),
@@ -150,7 +150,7 @@ def test_scene_background_prepare_only_uses_sqlite_taxonomy_when_root_csv_remove
             'negative_tags': ['train_interior'],
         },
     })
-    meta = tmp_path / 'metadata_sqlite.json'
+    meta = project / 'docs/automation/generation_runs/metadata_sqlite.json'
 
     proc = subprocess.run([
         sys.executable, str(BG_SCRIPT),
@@ -241,7 +241,7 @@ def test_char_base_prepare_only_requires_agent_authored_prompt_slots(tmp_path: P
             'outfit_detail': ['white_shirt', 'blue_skirt'],
         },
     })
-    meta = tmp_path / 'char_meta.json'
+    meta = project / 'docs/automation/generation_runs/char_meta.json'
 
     proc = subprocess.run([
         sys.executable, str(char_script),
@@ -280,7 +280,7 @@ def test_char_base_prepare_only_uses_sqlite_taxonomy_when_root_csv_removed(tmp_p
             'outfit_detail': ['white_shirt', 'blue_skirt'],
         },
     })
-    meta = tmp_path / 'char_meta_sqlite.json'
+    meta = project / 'docs/automation/generation_runs/char_meta_sqlite.json'
 
     proc = subprocess.run([
         sys.executable, str(char_script),
