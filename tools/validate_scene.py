@@ -187,8 +187,16 @@ def main(argv: list[str] | None = None) -> int:
         if renpy:
             gates['renpy_lint'] = run_phase([renpy, str(paths.project_root), 'lint'], paths.project_root, out_dir / 'renpy_lint.log', timeout=args.runtime_timeout)
             capture_out_dir = out_dir / 'gameplay_screenshots'
+            # Remove stale per-capture manifests before launching. If the new runtime
+            # capture fails before writing a final manifest, old PASS data must not
+            # leak into the current validation report.
+            for stale_name in ['capture_manifest.json', 'capture_quality_failed.json']:
+                stale = capture_out_dir / stale_name
+                if stale.exists():
+                    stale.unlink()
             gates['runtime_capture'] = run_phase([sys.executable, str(TOOLS / 'capture_scene_contact_sheet.py'), '--project-root', str(paths.project_root), '--scene-id', args.scene_id, '--capture-plan', str(plan_path), '--out-dir', str(capture_out_dir), '--runtime-timeout', str(args.runtime_timeout)], paths.project_root, out_dir / 'runtime_capture.log', timeout=args.runtime_timeout + 10)
             capture_manifest = capture_out_dir / 'capture_manifest.json'
+            capture_quality_failed = capture_out_dir / 'capture_quality_failed.json'
             if capture_manifest.exists():
                 try:
                     capture_data = json.loads(capture_manifest.read_text(encoding='utf-8'))
@@ -196,6 +204,15 @@ def main(argv: list[str] | None = None) -> int:
                     gates['runtime_capture']['image_quality'] = capture_data.get('image_quality', [])
                     if capture_data.get('image_quality_status') == 'FAIL':
                         gates['runtime_capture']['status'] = 'FAIL'
+                except Exception as exc:
+                    gates['runtime_capture']['image_quality_status'] = 'UNKNOWN'
+                    gates['runtime_capture']['image_quality_error'] = str(exc)
+            elif capture_quality_failed.exists():
+                try:
+                    failed_data = json.loads(capture_quality_failed.read_text(encoding='utf-8'))
+                    gates['runtime_capture']['image_quality_status'] = 'FAIL'
+                    gates['runtime_capture']['image_quality'] = failed_data
+                    gates['runtime_capture']['status'] = 'FAIL'
                 except Exception as exc:
                     gates['runtime_capture']['image_quality_status'] = 'UNKNOWN'
                     gates['runtime_capture']['image_quality_error'] = str(exc)
