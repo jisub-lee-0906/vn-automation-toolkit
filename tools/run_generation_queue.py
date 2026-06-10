@@ -15,6 +15,7 @@ TOOLS = ROOT / 'tools'
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
+from asset_lifecycle import apply_lifecycle  # noqa: E402
 from qa_asset_file import inspect_asset  # noqa: E402
 from vn_product_config import build_project_paths, require_under, resolve_project_path, validate_project_glob  # noqa: E402
 
@@ -210,6 +211,7 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str, runne
     current_promotion = str(metadata.get('promotion_status') or '')
     if not current_promotion.startswith('promoted'):
         metadata['promotion_status'] = 'not_promoted_pending_owner_approval'
+    apply_lifecycle(metadata)
     save_json(metadata_path, metadata)
     return result
 

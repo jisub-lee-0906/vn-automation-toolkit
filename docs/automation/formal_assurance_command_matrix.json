@@ -33,6 +33,15 @@
       "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
     ]
   },
+  "normalize-lifecycle": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Reads/writes only the contract-selected manifest_path and confines optional --json-out under project root.",
+    "evidence": [
+      "tests/test_asset_lifecycle.py::test_normalize_asset_lifecycle_backfills_legacy_manifest_statuses",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
   "sync": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",

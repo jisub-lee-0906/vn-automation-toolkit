@@ -14,6 +14,7 @@ TOOLS = ROOT / 'tools'
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
+from asset_lifecycle import apply_lifecycle  # noqa: E402
 from vn_product_config import build_project_paths, require_under  # noqa: E402
 
 SAFE_ASSET_ID_RE = re.compile(r'^[a-z][a-z0-9_]{1,80}$')
@@ -169,6 +170,7 @@ def mark_metadata_promoted(metadata_path: Path, metadata: dict, entry: dict, log
     now = entry['metadata']['promoted_at']
     metadata['qa_status'] = 'owner_approved_promoted'
     metadata['promotion_status'] = 'owner_approved_promoted'
+    apply_lifecycle(metadata, stage='promoted_integrated_pending_verification')
     promotions = metadata.setdefault('promotions', [])
     promotion_record = {
         'promoted_at': now,
@@ -310,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
             'qa_report': str(qa_report_path) if qa_report_path else None,
         },
     }
+    apply_lifecycle(entry, stage='promoted_integrated_pending_verification')
     action = upsert_manifest(manifest_path, entry, replace_existing=args.replace_existing)
 
     paths.promotions_root.mkdir(parents=True, exist_ok=True)

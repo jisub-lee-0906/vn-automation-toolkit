@@ -14,6 +14,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'check': ('check_renpy_asset_refs.py', 'Check literal RenPy image/audio refs under game/ exist.'),
     'gaps': ('report_renpy_integration_gaps.py', 'Report manifest-to-RenPy integration gaps.'),
     'validate': ('validate_vn_automation_docs.py', 'Validate automation docs, schemas, workflow index, and manifest.'),
+    'normalize-lifecycle': ('normalize_asset_lifecycle.py', 'Normalize manifest assets to canonical lifecycle_stage values.'),
     'sync': ('sync_obsidian_scene_asset_requests.py', 'Extract and resolve Required Assets from Obsidian scene notes.'),
     'resolve': ('resolve_asset_requests.py', 'Resolve extracted asset requests against manifest/candidates/workflow routes.'),
     'queue': ('build_owner_review_queue.py', 'Build owner review queue from resolved scene asset requests.'),

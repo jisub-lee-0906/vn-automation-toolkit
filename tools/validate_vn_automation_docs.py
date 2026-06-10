@@ -11,6 +11,7 @@ TOOLS = ROOT / 'tools'
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
+from asset_lifecycle import CANONICAL_LIFECYCLE_STAGES  # noqa: E402
 from vn_product_config import build_project_paths  # noqa: E402
 
 REQUIRED_CONTRACT_KEYS = [
@@ -176,6 +177,9 @@ def validate_manifest(paths, errors: list[str]) -> None:
             errors.append(f'asset_manifest duplicate asset_id: {asset_id}')
         seen.add(asset_id)
         promoted = asset.get('promoted_path')
+        lifecycle_stage = asset.get('lifecycle_stage')
+        if lifecycle_stage is not None and lifecycle_stage not in CANONICAL_LIFECYCLE_STAGES:
+            errors.append(f'asset_manifest.assets[{idx}] unknown lifecycle_stage: {lifecycle_stage}')
         if promoted:
             if not isinstance(promoted, str) or not is_safe_project_relative_path(promoted):
                 errors.append(f'asset_manifest.assets[{idx}] unsafe promoted_path: {promoted}')

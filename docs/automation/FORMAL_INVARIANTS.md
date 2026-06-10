@@ -158,6 +158,7 @@ Command coverage summary:
 - `check` — project command via centralized project path builder.
 - `gaps` — project command with confined report output.
 - `validate` — project command via centralized project path builder.
+- `normalize-lifecycle` — project command that canonicalizes manifest asset lifecycle stages through the contract-selected manifest.
 - `sync` — project command with confined project sidecars and intentional Obsidian input.
 - `resolve` — project command with confined source, manifest, generation runs, and output.
 - `queue` — project command with confined resolved-glob matches and queue outputs.
