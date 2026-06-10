@@ -22,27 +22,8 @@ DEFAULT_WORKFLOW_ROUTES = {
     'background': 'scene_background',
     'event_cg': 'scene_event_cg',
     'prop_cg': 'scene_prop_cg',
-    'bgm': 'audio_bgm_with_sfx',
-    'sfx': 'audio_bgm_with_sfx',
-}
-
-DEFAULT_AUDIO_ROLE_CONTRACTS = {
-    'bgm': {
-        'workflow_id': 'audio_bgm_with_sfx',
-        'audio_role': 'audio_bgm',
-        'prompt_shape': 'instrumentation + musical form/rhythm + mood + short role',
-        'default_mode': 'Music',
-        'default_duration': 24.0,
-        'negative_prompt_default': '',
-    },
-    'sfx': {
-        'workflow_id': 'audio_bgm_with_sfx',
-        'audio_role': 'audio_sfx',
-        'prompt_shape': 'short positive-only natural-language cue + one/two material or timbre colors',
-        'default_mode': 'One-shot',
-        'default_duration': 2.5,
-        'negative_prompt_default': '',
-    },
+    'bgm': 'audio_bgm_ace',
+    'sfx': 'audio_sfx_mmaudio',
 }
 
 SCENE_TEMPLATE = '''---
@@ -131,7 +112,7 @@ Obsidian은 기획/장면 노트, project docs는 machine-readable sidecar, Comf
 scene note -> asset requests -> resolver -> owner review queue -> generation/QA -> approval -> promotion -> Ren'Py verification.
 
 ## 7. Workflow routing
-`workflow_routes`는 asset type을 workflow id에 매핑한다. Manifest hit를 먼저 재사용하고 없을 때만 generation decision을 만든다. BGM/SFX는 둘 다 `audio_bgm_with_sfx` 엔진을 쓰되 `audio_role_contracts`로 `audio_bgm`/`audio_sfx` 역할을 분리한다. Workflow JSON을 BGM/SFX용으로 복사하지 않는다.
+`workflow_routes`는 asset type을 workflow id에 매핑한다. Manifest hit를 먼저 재사용하고 없을 때만 generation decision을 만든다.
 
 ## 11. QA gates
 file QA, visual/audio QA, explicit owner approval, asset reference check, integration gap report, Ren'Py lint를 gate로 사용한다.
@@ -225,7 +206,6 @@ def build_contract(args: argparse.Namespace, project_root: Path) -> dict[str, An
             'promote_only_after_qa',
         ],
         'workflow_routes': DEFAULT_WORKFLOW_ROUTES,
-        'audio_role_contracts': DEFAULT_AUDIO_ROLE_CONTRACTS,
         'manifest_path': (game_dir / 'data/asset_manifest.json').as_posix(),
         'generated_candidates_root': generated_candidates_root.as_posix(),
         'generation_runs_root': generation_runs_root.as_posix(),

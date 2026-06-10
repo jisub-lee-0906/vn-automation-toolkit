@@ -24,6 +24,8 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
     'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
     'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),
+    'obsidian-audit': ('audit_obsidian_active_state.py', 'Audit Obsidian active-state/dashboard/current-state semantic consistency.'),
+    'obsidian-summarize': ('summarize_obsidian_readability_indexes.py', 'Generate reader-facing Obsidian timeline/seed/emotional-arc indexes.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
 }
 

@@ -103,6 +103,8 @@ def test_scene_background_prepare_only_uses_agent_authored_prompt_slots_not_clas
             'background_theme': ['bus_interior', 'vehicle_interior', 'bus', 'chair', 'window', 'rain', 'wet', 'reflection', 'road', 'street'],
             'time_mood': ['indoors', 'dawn'],
             'negative_tags': ['train_interior'],
+            'semantic_prompt': 'empty dawn city bus interior, rain-wet windows',
+            'style_prompt': 'quiet blue-hour commute atmosphere',
         },
         'visual_brief': 'Dawn first-bus interior, empty and rain-wet through the windows.',
         'tag_rationale': {'bus_interior': 'primary class anchor'},
@@ -130,9 +132,11 @@ def test_scene_background_prepare_only_uses_agent_authored_prompt_slots_not_clas
     assert data['prompt_context_notes']['visual_brief'] == 'Dawn first-bus interior, empty and rain-wet through the windows.'
     assert data['prompt_context_notes']['tag_rationale']['bus_interior'] == 'primary class anchor'
     assert data['prompt_context_notes']['negative_rationale']['train_interior'] == 'avoid subway/train interior confusion'
+    assert data['semantic_prompt_segment'] == 'empty dawn city bus interior, rain-wet windows, quiet blue-hour commute atmosphere'
     assert 'classroom' not in data['csv_placeholder_tags']
     patched = json.loads(Path(data['patched_workflow_path']).read_text(encoding='utf-8'))
     assert 'bus_interior' in patched['3']['inputs']['text']
+    assert 'empty dawn city bus interior' in patched['3']['inputs']['text']
     assert 'train_interior' in patched['4']['inputs']['text']
     assert 'classroom' not in patched['3']['inputs']['text']
 
@@ -180,7 +184,7 @@ def test_audio_generation_queue_fails_closed_without_prompt_slots(tmp_path: Path
             'description': 'soft door knock',
             'decision': 'generate',
             'status': 'needs_generation',
-            'recommended_workflow_id': 'audio_sfx_mmaudio',
+            'recommended_workflow_id': 'audio_bgm_with_sfx',
         }],
     })
     out = project / 'docs/automation/batch.json'

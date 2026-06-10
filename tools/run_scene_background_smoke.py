@@ -21,6 +21,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+TOOLS = Path(__file__).resolve().parent
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
 from danbooru_taxonomy import validate_tags
 from vn_product_config import build_project_paths, require_under
 
@@ -42,6 +46,8 @@ README_NEGATIVE = (
 
 PROMPT_CONTEXT_KEYS = [
     "visual_brief",
+    "semantic_prompt",
+    "style_prompt",
     "tag_rationale",
     "negative_rationale",
     "semantic_failure_notes",
@@ -124,6 +130,30 @@ def prompt_context_notes(prompt_slots_data: dict) -> dict:
         elif key in slots:
             notes[key] = slots[key]
     return notes
+
+
+def semantic_prompt_segment(prompt_slots_data: dict) -> str:
+    """Return a short agent-authored semantic segment for the live prompt.
+
+    Strict Danbooru tags can be too generic for architecture/material/style.
+    Owner QA in Unit 6 showed that `hallway, window, night` can collapse into a
+    school or institutional corridor when the intended scene is a noble mansion
+    hallway. Keep tag validation for the tag segment, but allow a concise
+    semantic phrase to carry location/material/style intent into generation.
+    """
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    parts: list[str] = []
+    for key in ("semantic_prompt", "style_prompt"):
+        value = slots.get(key, prompt_slots_data.get(key))
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+        elif isinstance(value, list):
+            parts.extend(str(item).strip() for item in value if str(item).strip())
+    segment = ", ".join(parts).strip()
+    if len(segment) > 240:
+        raise RuntimeError("SCENE_BACKGROUND_SEMANTIC_PROMPT_TOO_LONG: keep semantic/style prompt under 240 characters")
+    return segment
 
 
 def load_json(path: Path):
@@ -270,6 +300,9 @@ def main() -> int:
         background_theme=", ".join(background_theme_tags),
         time_mood=", ".join(time_mood_tags),
     )
+    semantic_segment = semantic_prompt_segment(prompt_slots_data)
+    if semantic_segment:
+        positive = positive + ", BREAK, " + semantic_segment
     negative = README_NEGATIVE
     if negative_slot_tags:
         negative = negative + ', ' + ', '.join(negative_slot_tags)
@@ -325,6 +358,7 @@ def main() -> int:
         "legacy_csv_used": taxonomy_meta['legacy_csv_used'],
         "taxonomy_placeholder_tags": placeholder_tags,
         "taxonomy_negative_tags": negative_slot_tags,
+        "semantic_prompt_segment": semantic_segment,
         "taxonomy_validation": taxonomy_validation,
         "csv_placeholder_tags": placeholder_tags,
         "csv_negative_tags": negative_slot_tags,

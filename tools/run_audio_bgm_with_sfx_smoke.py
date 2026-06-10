@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
 import sys
 import time
 import urllib.error
@@ -14,16 +13,32 @@ import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
-
-from vn_product_config import build_project_paths, require_under
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = PROJECT_ROOT / 'docs/automation/project_contract.json'
-RUNS_ROOT = PROJECT_ROOT / 'docs/automation/generation_runs'
+from vn_product_config import build_project_paths, require_under
 
-DEFAULT_NEGATIVE = 'Low quality, music, melody, speech, voice, talking, singing, crowd, rain, wind, siren, police, ambulance, engine rumble, traffic noise, distorted, robotic, electronic'
-DEFAULT_VIDEO_NAME = 'hermes_mmaudio_silent_conditioning_8s_384.mp4'
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+WORKFLOW_ID = 'audio_bgm_with_sfx'
+MODE_INDEX = {'Music': 0, 'Instrument': 1, 'SFX': 2, 'One-shot': 3}
+AUDIO_ROLE_CONTRACTS = {
+    'bgm': {
+        'audio_role': 'audio_bgm',
+        'default_mode': 'Music',
+        'default_duration': 24.0,
+        'negative_prompt_default': '',
+        'prompt_shape': 'instrumentation + musical form/rhythm + mood + short role',
+        'role_contract_path': 'audio_bgm_with_sfx/roles/audio_bgm.md',
+    },
+    'sfx': {
+        'audio_role': 'audio_sfx',
+        'default_mode': 'One-shot',
+        'default_duration': 2.5,
+        'negative_prompt_default': '',
+        'prompt_shape': 'short positive-only natural-language cue + one/two material or timbre colors',
+        'role_contract_path': 'audio_bgm_with_sfx/roles/audio_sfx.md',
+    },
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -37,7 +52,28 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
 
 def slugify(value: str) -> str:
     slug = re.sub(r'[^a-z0-9_]+', '_', value.strip().lower().replace('-', '_')).strip('_')
-    return slug or 'sfx'
+    return slug or 'audio'
+
+
+def normalize_asset_type(value: str | None) -> str:
+    key = (value or '').strip().lower().replace('-', '_')
+    if key in {'bgm', 'music', 'audio_bgm', 'audio_bgm_with_sfx'}:
+        return 'bgm'
+    if key in {'sfx', 'sound_effect', 'sound_effects', 'one_shot', 'oneshot'}:
+        return 'sfx'
+    return key or 'audio'
+
+
+def role_contract(asset_type: str) -> dict[str, Any]:
+    return AUDIO_ROLE_CONTRACTS.get(asset_type, AUDIO_ROLE_CONTRACTS['sfx'])
+
+
+def default_mode(asset_type: str) -> str:
+    return str(role_contract(asset_type)['default_mode'])
+
+
+def default_duration(asset_type: str) -> float:
+    return float(role_contract(asset_type)['default_duration'])
 
 
 def resolve_prompt_slots_path(project_root: Path, path: Path) -> Path:
@@ -65,18 +101,30 @@ def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> P
     return None
 
 
-def load_audio_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> dict[str, Any]:
+def load_audio_prompt_slots(path: Path, asset_id: str, asset_type: str) -> dict[str, Any]:
     data = load_json(path)
-    if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
-        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
+    workflow_id = data.get('workflow_id')
+    if workflow_id and workflow_id != WORKFLOW_ID:
+        raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {WORKFLOW_ID}, got {workflow_id}')
     if data.get('asset_id') and asset_id and data.get('asset_id') != asset_id:
         raise RuntimeError(f'Prompt slots asset_id mismatch: expected {asset_id}, got {data.get("asset_id")}')
     slots = data.get('prompt_slots') or {}
-    prompt = str(slots.get('positive_prompt') or slots.get('sfx_prompt') or '').strip()
+    prompt = str(slots.get('positive_prompt') or slots.get('audio_prompt') or slots.get('bgm_prompt') or slots.get('sfx_prompt') or '').strip()
     if not prompt:
-        raise RuntimeError('UNROUTED_AUDIO_SFX: agent-authored prompt_slots.positive_prompt is required')
-    negative = str(slots.get('negative_prompt') or '').strip()
-    return {'data': data, 'positive_prompt': prompt, 'negative_prompt': negative}
+        raise RuntimeError('UNROUTED_AUDIO: agent-authored prompt_slots.positive_prompt is required')
+    expected_role = str(role_contract(asset_type)['audio_role'])
+    declared_role = str(data.get('audio_role') or data.get('role') or slots.get('audio_role') or slots.get('role') or '').strip()
+    if declared_role and declared_role != expected_role:
+        raise RuntimeError(f'Prompt slots audio_role mismatch: expected {expected_role}, got {declared_role}')
+    prompt_shape = str(slots.get('prompt_shape') or data.get('prompt_shape') or role_contract(asset_type)['prompt_shape'])
+    return {
+        'data': data,
+        'slots': slots,
+        'positive_prompt': prompt,
+        'negative_prompt': str(slots.get('negative_prompt') or '').strip(),
+        'audio_role': expected_role,
+        'prompt_shape': prompt_shape,
+    }
 
 
 def url_json(url: str, timeout: float = 5.0):
@@ -99,7 +147,7 @@ def discover_endpoint(candidates: list[str]) -> str:
     raise RuntimeError('No live ComfyUI endpoint found: ' + '; '.join(errors))
 
 
-def submit_prompt(endpoint: str, workflow: dict) -> str:
+def submit_prompt(endpoint: str, workflow: dict[str, Any]) -> str:
     payload = json.dumps({'prompt': workflow, 'client_id': str(uuid.uuid4())}).encode('utf-8')
     req = urllib.request.Request(endpoint + '/prompt', data=payload, headers={'Content-Type': 'application/json'}, method='POST')
     try:
@@ -121,7 +169,9 @@ def wait_history(endpoint: str, prompt_id: str, timeout_s: int = 900) -> dict[st
         try:
             status, hist = url_json(endpoint + '/history/' + prompt_id, timeout=10)
             if status == 200 and isinstance(hist, dict) and prompt_id in hist:
-                return hist[prompt_id]
+                item = hist[prompt_id]
+                if item.get('outputs'):
+                    return item
         except Exception:
             pass
         if time.time() - last_queue_print > 20:
@@ -149,7 +199,7 @@ def audio_paths_from_history(history: dict[str, Any], output_root: Path) -> list
                 if not isinstance(item, dict):
                     continue
                 filename = item.get('filename')
-                subfolder = item.get('subfolder', '') or ''
+                subfolder = str(item.get('subfolder', '') or '').replace('\\', '/')
                 typ = item.get('type', 'output')
                 if filename and typ == 'output':
                     candidate = (root / subfolder / filename).resolve()
@@ -161,92 +211,114 @@ def audio_paths_from_history(history: dict[str, Any], output_root: Path) -> list
     return paths
 
 
-def ensure_conditioning_video(input_root: Path, name: str = DEFAULT_VIDEO_NAME) -> str:
-    target = input_root / name
-    if target.exists():
-        return name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not shutil.which('ffmpeg'):
-        return name
-    cmd = [
-        'ffmpeg', '-y', '-f', 'lavfi', '-i', 'color=c=black:s=384x384:r=25:d=8',
-        '-pix_fmt', 'yuv420p', str(target),
-    ]
-    subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=True)
-    return name
+def choose_asset_type(asset_id: str, description: str, explicit: str | None) -> str:
+    if explicit:
+        return normalize_asset_type(explicit)
+    text = f'{asset_id} {description}'.lower()
+    if 'bgm' in text or 'music' in text or 'loop' in text:
+        return 'bgm'
+    return 'sfx'
 
 
-def sanitize_slug(value: str) -> str:
-    out = ''.join(ch.lower() if ch.isalnum() else '_' for ch in value).strip('_')
-    while '__' in out:
-        out = out.replace('__', '_')
-    return out or 'sfx'
-
-
-def prepare_workflow(project_root: Path, asset_id: str, description: str, scene_id: str, seed: int, prompt_slots_path: Path | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+def prepare_workflow(
+    project_root: Path,
+    asset_id: str,
+    description: str,
+    scene_id: str,
+    seed: int,
+    asset_type: str,
+    prompt_slots_path: Path | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     contract = load_json(project_root / 'docs/automation/project_contract.json')
     workflow_root = Path(contract['workflow_pack_root'])
     output_root = Path(contract.get('comfyui_output_root', ''))
-    input_root = Path(contract.get('comfyui_input_root', '')) if contract.get('comfyui_input_root') else None
-    workflow_path = workflow_root / 'audio_sfx_mmaudio/audio_sfx_mmaudio_workflow_api.json'
+    workflow_path = workflow_root / 'audio_bgm_with_sfx/audio_bgm_with_sfx_workflow_api.json'
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
     resolved_prompt_slots = prompt_slots_path or prompt_slots_path_for(project_root, asset_id, scene_id)
     if resolved_prompt_slots is None:
-        raise RuntimeError('UNROUTED_AUDIO_SFX: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
-    prompt_slot_values = load_audio_prompt_slots(resolved_prompt_slots, 'audio_sfx_mmaudio', asset_id)
+        raise RuntimeError('UNROUTED_AUDIO: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
+    prompt_slot_values = load_audio_prompt_slots(resolved_prompt_slots, asset_id, asset_type)
+    slots = prompt_slot_values['slots']
+    contract_info = role_contract(asset_type)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    asset_slug = sanitize_slug(asset_id)
-    run_id = f'audio_sfx_mmaudio_{asset_slug}_{timestamp}'
+    asset_slug = slugify(asset_id)
+    run_id = f'audio_bgm_with_sfx_{asset_slug}_{timestamp}'
     run_dir = project_root / 'docs/automation/generation_runs' / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    filename_prefix = f'audio_sfx_mmaudio/{run_id}_{asset_slug}'
-    video_name = DEFAULT_VIDEO_NAME
-    if input_root is not None:
-        video_name = ensure_conditioning_video(input_root)
 
-    workflow['1']['inputs']['video'] = video_name
-    workflow['4']['inputs']['prompt'] = prompt_slot_values['positive_prompt']
-    workflow['4']['inputs']['negative_prompt'] = prompt_slot_values['negative_prompt'] or workflow['4']['inputs'].get('negative_prompt') or DEFAULT_NEGATIVE
-    workflow['4']['inputs']['seed'] = seed
-    workflow['4']['inputs']['duration'] = min(float(workflow['4']['inputs'].get('duration', 8.0)), 8.0)
-    workflow['5']['inputs']['filename_prefix'] = filename_prefix
+    mode = str(slots.get('mode') or slots.get('audio_mode') or default_mode(asset_type))
+    if mode not in MODE_INDEX:
+        raise RuntimeError(f'Unsupported audio_bgm_with_sfx mode: {mode}; expected one of {sorted(MODE_INDEX)}')
+    duration = float(slots.get('duration') or slots.get('seconds') or default_duration(asset_type))
+    duration = max(0.5, min(duration, 180.0))
+    use_text_generate = bool(slots.get('use_text_generate', False))
+    steps = int(slots.get('steps') or 8)
+    cfg = float(slots.get('cfg') or 1.0)
+    sampler_name = str(slots.get('sampler_name') or 'lcm')
+    scheduler = str(slots.get('scheduler') or 'simple')
+    filename_prefix = f'audio_bgm_with_sfx/{run_id}_{asset_slug}'
 
-    patched_workflow_path = run_dir / 'audio_sfx_mmaudio_patched_workflow_api.json'
+    workflow['52:31']['inputs']['value'] = prompt_slot_values['positive_prompt']
+    workflow['52:7']['inputs']['text'] = prompt_slot_values['negative_prompt'] or str(contract_info['negative_prompt_default'])
+    workflow['52:43']['inputs']['choice'] = mode
+    workflow['52:43']['inputs']['index'] = MODE_INDEX[mode]
+    workflow['52:36']['inputs']['value'] = duration
+    workflow['52:35']['inputs']['value'] = use_text_generate
+    workflow['52:3']['inputs']['seed'] = seed
+    workflow['52:3']['inputs']['steps'] = steps
+    workflow['52:3']['inputs']['cfg'] = cfg
+    workflow['52:3']['inputs']['sampler_name'] = sampler_name
+    workflow['52:3']['inputs']['scheduler'] = scheduler
+    workflow['19']['inputs']['filename_prefix'] = filename_prefix
+
+    patched_workflow_path = run_dir / 'audio_bgm_with_sfx_patched_workflow_api.json'
     save_json(patched_workflow_path, workflow)
     metadata = {
         'run_id': run_id,
         'asset_id': asset_id,
         'scene_id': scene_id,
-        'asset_type': 'sfx',
-        'workflow_id': 'audio_sfx_mmaudio',
+        'asset_type': asset_type,
+        'audio_role': prompt_slot_values['audio_role'],
+        'prompt_shape': prompt_slot_values['prompt_shape'],
+        'role_contract_path': str(workflow_root / contract_info['role_contract_path']),
+        'negative_prompt_strategy': 'blank_by_default_per_owner_qa_unless_prompt_slots_override',
+        'workflow_id': WORKFLOW_ID,
         'workflow_path': str(workflow_path),
         'workflow_sha256': workflow_sha,
         'patched_workflow_path': str(patched_workflow_path),
         'output_root': str(output_root),
-        'conditioning_video': video_name,
         'prompt_source': 'agent_authored_prompt_slots',
         'prompt_slots_path': str(resolved_prompt_slots),
         'prompt_slots': prompt_slot_values['data'].get('prompt_slots', {}),
-        'positive_prompt': workflow['4']['inputs']['prompt'],
-        'negative_prompt': workflow['4']['inputs']['negative_prompt'],
+        'positive_prompt': workflow['52:31']['inputs']['value'],
+        'negative_prompt': workflow['52:7']['inputs']['text'],
+        'audio_mode': mode,
+        'duration': duration,
+        'use_text_generate': use_text_generate,
         'seed': seed,
+        'steps': steps,
+        'cfg': cfg,
+        'sampler_name': sampler_name,
+        'scheduler': scheduler,
         'qa_status': 'pending_file_qa',
         'promotion_status': 'not_promoted_pending_owner_approval',
         'candidate_copies': [],
         'output_paths': [],
+        'postprocess_required': ['ffprobe', 'silencedetect', 'loudness_check', 'trim_tail', 'normalize_or_loop_edit', 'convert_to_ogg_before_promotion'],
     }
     return workflow, metadata
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='Run one MMAudio SFX generation for a resolved VN asset request.')
+    parser = argparse.ArgumentParser(description='Run one Stable Audio 3 BGM/SFX generation for a resolved VN asset request.')
     parser.add_argument('--project-root', default=str(PROJECT_ROOT))
-    parser.add_argument('--asset-id', default='sfx_door_knock_soft')
-    parser.add_argument('--description', default='soft door knock')
+    parser.add_argument('--asset-id', default='sfx_notification_soft')
+    parser.add_argument('--description', default='soft fantasy notification sound')
     parser.add_argument('--scene-id', default='scene')
-    parser.add_argument('--seed', type=int, default=260530401)
+    parser.add_argument('--asset-type', choices=['bgm', 'sfx'], help='Override inferred asset type.')
+    parser.add_argument('--seed', type=int, default=260610801)
     parser.add_argument('--prompt-slots', help='Agent-authored audio prompt slots JSON under docs/production/prompt_slots.')
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--out-metadata')
@@ -258,16 +330,20 @@ def main(argv: list[str] | None = None) -> int:
         try:
             require_under(Path(args.out_metadata).expanduser().resolve(), project_root, 'out-metadata')
         except ValueError as exc:
-            print(f'AUDIO_SFX_REFUSED: {exc}')
+            print(f'AUDIO_REFUSED: {exc}')
             return 2
     raw_slots = Path(args.prompt_slots) if args.prompt_slots else None
     prompt_slots_path = resolve_prompt_slots_path(project_root, raw_slots) if raw_slots else None
-    workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed, prompt_slots_path)
+    asset_type = choose_asset_type(args.asset_id, args.description, args.asset_type)
+    workflow, metadata = prepare_workflow(project_root, args.asset_id, args.description, args.scene_id, args.seed, asset_type, prompt_slots_path)
     run_dir = Path(metadata['patched_workflow_path']).parent
     metadata_path = Path(args.out_metadata) if args.out_metadata else run_dir / 'metadata.json'
 
     print('RUN_ID', metadata['run_id'])
     print('PATCHED_WORKFLOW', metadata['patched_workflow_path'])
+    print('AUDIO_MODE', metadata['audio_mode'])
+    print('AUDIO_ROLE', metadata['audio_role'])
+    print('PROMPT_SHAPE', metadata['prompt_shape'])
     print('PROMPT', metadata['positive_prompt'])
     print('SEED', metadata['seed'])
 

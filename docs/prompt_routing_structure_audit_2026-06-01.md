@@ -33,9 +33,9 @@
 
 ### Additional prompt-sensitive helpers / fixed
 
-- `tools/run_audio_sfx_mmaudio_smoke.py`
+- `tools/run_audio_bgm_with_sfx_smoke.py`
   - Previous risk: it built an audio prompt directly from the asset description, which was safer than hidden image routing but still left audio outside the explicit prompt-slot contract.
-  - Fix: `audio_sfx_mmaudio` now requires an agent-authored prompt-slots JSON with `positive_prompt`; optional `negative_prompt` is recorded and applied. Generation queue treats audio as prompt-sensitive and fail-closes without prompt slots.
+  - Fix: `audio_bgm_with_sfx` now requires an agent-authored prompt-slots JSON with `positive_prompt`; optional `negative_prompt` is recorded and applied. Generation queue treats audio as prompt-sensitive and fail-closes without prompt slots.
 
 - `tools/run_char_base_smoke.py`
   - Previous risk: it was a legacy smoke-test/default character generator with fixed character/outfit placeholder tags such as `school_uniform`.

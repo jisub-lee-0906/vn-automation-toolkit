@@ -202,6 +202,23 @@ def test_capture_scene_dry_run_uses_generic_capture_plan(tmp_path: Path):
     assert 'capture start game/script.rpy:1' in proc.stdout
 
 
+def test_capture_plan_accepts_label_based_warp_and_dry_run_resolves_current_line(tmp_path: Path):
+    project = make_min_project(tmp_path)
+    script = project / 'game/script.rpy'
+    script.write_text('\n\nlabel scene_start_probe:\n    return\n', encoding='utf-8')
+    plan = project / 'docs/automation/capture_plans/scene_start.json'
+    plan.parent.mkdir(parents=True)
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_start',
+        'captures': [{'name': 'start', 'warp_label': 'scene_start_probe', 'warp_offset_lines': 1}],
+    }), encoding='utf-8')
+
+    validate = run_cli('validate-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--static-only')
+    assert validate.returncode == 0, validate.stdout + validate.stderr
+    capture = run_cli('capture-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--dry-run')
+    assert capture.returncode == 0, capture.stdout + capture.stderr
+    assert 'capture start game/script.rpy:4' in capture.stdout
+
 
 def mutate_contract(project: Path, **updates) -> dict:
     contract_path = project / 'docs/automation/project_contract.json'

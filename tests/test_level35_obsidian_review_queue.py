@@ -54,7 +54,7 @@ def make_project(tmp_path: Path) -> Path:
         'workflow_routes': {
             'background': 'scene_background',
             'event_cg': 'scene_event_cg',
-            'sfx': 'audio_sfx_mmaudio',
+            'sfx': 'audio_bgm_with_sfx',
         }
     })
     write_json(project / 'game/data/asset_manifest.json', {
@@ -148,7 +148,7 @@ def test_build_owner_review_queue_from_resolved_requests(tmp_path: Path):
                 'asset_type': 'sfx',
                 'decision': 'generate',
                 'status': 'needs_generation',
-                'recommended_workflow_id': 'audio_sfx_mmaudio',
+                'recommended_workflow_id': 'audio_bgm_with_sfx',
             },
         ],
     })

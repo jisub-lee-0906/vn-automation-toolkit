@@ -339,7 +339,7 @@ E:/workspace/obsidian-vn/<game_slug>/VN/Automation/Owner_Review_Queue.md
 ```text
 bg_classroom_evening -> review_existing_candidate -> scene_background
 event_cg_seoha_choice_pause -> review_existing_candidate -> scene_event_cg
-sfx_door_knock_soft -> generate -> audio_sfx_mmaudio
+sfx_door_knock_soft -> generate -> audio_bgm_with_sfx
 ```
 
 Practical level은 3.0 초입에서 3.5에 도달했다. 이제 “작가가 Obsidian에 scene note를 쓰면 Hermes가 필요한 asset 후보/부족분을 정리해서 owner review queue로 보여주는 수준”이다. 아직 자동 생성 실행/자동 promote/자동 .rpy patch는 하지 않는다. 다음 Level 4는 resolved queue의 `generate` 항목을 workflow runner로 넘기는 generation orchestrator다.
@@ -350,7 +350,7 @@ Practical level은 3.0 초입에서 3.5에 도달했다. 이제 “작가가 Obs
 
 ```text
 tools/run_generation_queue.py
-tools/run_audio_sfx_mmaudio_smoke.py
+tools/run_audio_bgm_with_sfx_smoke.py
 ```
 
 테스트:
@@ -376,8 +376,8 @@ tests/test_level4_generation_orchestrator.py
 ```text
 scene_id: seoha_choice_pause
 asset_id: sfx_door_knock_soft
-workflow_id: audio_sfx_mmaudio
-run_id: audio_sfx_mmaudio_sfx_door_knock_soft_20260530_221446
+workflow_id: audio_bgm_with_sfx
+run_id: audio_bgm_with_sfx_sfx_door_knock_soft_20260530_221446
 endpoint: http://127.0.0.1:8000
 prompt_id: 1a7ca953-acd1-45bf-9eb0-df75b4046597
 ```
@@ -385,7 +385,7 @@ prompt_id: 1a7ca953-acd1-45bf-9eb0-df75b4046597
 생성된 candidate:
 
 ```text
-docs/automation/generated_candidates/audio/audio_sfx_mmaudio_sfx_door_knock_soft_20260530_221446/audio_sfx_mmaudio_sfx_door_knock_soft_20260530_221446_sfx_door_knock_soft_00001_.flac
+docs/automation/generated_candidates/audio/audio_bgm_with_sfx_sfx_door_knock_soft_20260530_221446/audio_bgm_with_sfx_sfx_door_knock_soft_20260530_221446_sfx_door_knock_soft_00001_.flac
 ```
 
 QA 결과:
@@ -395,7 +395,7 @@ status: pass
 extension: .flac
 codec: flac
 duration_seconds: 8.010884
-qa_report: docs/automation/qa_reports/audio_sfx_mmaudio_sfx_door_knock_soft_20260530_221446_1_file_qa.json
+qa_report: docs/automation/qa_reports/audio_bgm_with_sfx_sfx_door_knock_soft_20260530_221446_1_file_qa.json
 ```
 
 Level 4 실행 후 `seoha_choice_pause` decision:
@@ -403,7 +403,7 @@ Level 4 실행 후 `seoha_choice_pause` decision:
 ```text
 bg_classroom_evening -> review_existing_candidate -> scene_background
 event_cg_seoha_choice_pause -> review_existing_candidate -> scene_event_cg
-sfx_door_knock_soft -> review_existing_candidate -> audio_sfx_mmaudio
+sfx_door_knock_soft -> review_existing_candidate -> audio_bgm_with_sfx
 ```
 
 Owner review queue refresh 결과:

@@ -37,7 +37,7 @@ def make_project(tmp_path: Path) -> Path:
         'workflow_routes': {
             'background': 'scene_background',
             'event_cg': 'scene_event_cg',
-            'sfx': 'audio_sfx_mmaudio',
+            'sfx': 'audio_bgm_with_sfx',
         }
     })
     write_json(project / 'game/data/asset_manifest.json', {
@@ -78,7 +78,7 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
     write_json(project / 'docs/automation/generation_runs/run_sfx/metadata.json', {
         'run_id': 'run_sfx',
         'asset_type': 'sfx',
-        'workflow_id': 'audio_sfx_mmaudio',
+        'workflow_id': 'audio_bgm_with_sfx',
         'positive_prompt': 'soft door knock in classroom',
         'candidate_copies': [str(weak_sfx)],
         'qa_status': 'qa_pass_candidate_not_promoted',
@@ -140,7 +140,7 @@ def test_resolver_reuses_manifest_candidate_or_recommends_generation(tmp_path: P
     assert decisions['event_cg_seoha_choice_pause']['decision'] == 'review_existing_candidate'
     assert decisions['event_cg_seoha_choice_pause']['candidate_matches'][0]['run_id'] == 'run_event'
     assert decisions['sfx_paper_slide_soft']['decision'] == 'generate'
-    assert decisions['sfx_paper_slide_soft']['recommended_workflow_id'] == 'audio_sfx_mmaudio'
+    assert decisions['sfx_paper_slide_soft']['recommended_workflow_id'] == 'audio_bgm_with_sfx'
     assert decisions['bg_bus_interior_dawn']['decision'] == 'generate'
     assert decisions['bg_bus_interior_dawn']['candidate_matches'] == []
 

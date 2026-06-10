@@ -21,6 +21,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+TOOLS = Path(__file__).resolve().parent
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
 from danbooru_taxonomy import validate_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +49,17 @@ WIDTH = 1024
 HEIGHT = 576
 STEPS = 30
 CFG = 5.2
+
+PROMPT_CONTEXT_KEYS = [
+    "visual_brief",
+    "semantic_prompt",
+    "style_prompt",
+    "extra_negative_prompt",
+    "tag_rationale",
+    "negative_rationale",
+    "semantic_failure_notes",
+    "reroll_or_prompt_change_reason",
+]
 
 
 def slugify(value: str) -> str:
@@ -98,6 +113,111 @@ def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list
     if not item_form or not material or not placement:
         raise RuntimeError('UNROUTED_SCENE_PROP_CG: agent-authored prompt_slots.item_form/material_detail/placement_background are required')
     return item_form, material, placement, data
+
+
+def prompt_context_notes(prompt_slots_data: dict) -> dict:
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    notes = {}
+    for key in PROMPT_CONTEXT_KEYS:
+        if key in prompt_slots_data:
+            notes[key] = prompt_slots_data[key]
+        elif key in slots:
+            notes[key] = slots[key]
+    return notes
+
+
+def semantic_prompt_segment(prompt_slots_data: dict) -> str:
+    """Return short semantic/style guidance for the live prop prompt.
+
+    Unit 7 owner QA showed that generic tags like `letter, envelope,
+    blank_page` can produce a generic envelope when the intended prop is a red
+    magical contract. Keep taxonomy validation for the object/material/placement
+    tags, but allow concise semantic/style text to carry story identity.
+    """
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    parts: list[str] = []
+    for key in ("semantic_prompt", "style_prompt"):
+        value = slots.get(key, prompt_slots_data.get(key))
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+        elif isinstance(value, list):
+            parts.extend(str(item).strip() for item in value if str(item).strip())
+    segment = ", ".join(parts).strip()
+    if len(segment) > 240:
+        raise RuntimeError("SCENE_PROP_CG_SEMANTIC_PROMPT_TOO_LONG: keep semantic/style prompt under 240 characters")
+    return segment
+
+
+def extra_negative_prompt_segment(prompt_slots_data: dict) -> str:
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    value = slots.get("extra_negative_prompt", prompt_slots_data.get("extra_negative_prompt"))
+    if isinstance(value, str):
+        segment = value.strip()
+    elif isinstance(value, list):
+        segment = ", ".join(str(item).strip() for item in value if str(item).strip())
+    else:
+        segment = ""
+    if len(segment) > 240:
+        raise RuntimeError("SCENE_PROP_CG_EXTRA_NEGATIVE_TOO_LONG: keep extra negative prompt under 240 characters")
+    return segment
+
+
+def prompt_shape(prompt_slots_data: dict) -> str:
+    raw_slots = prompt_slots_data.get("prompt_slots")
+    slots = raw_slots if isinstance(raw_slots, dict) else {}
+    value = slots.get("prompt_shape", prompt_slots_data.get("prompt_shape", "quality_first_wrapper"))
+    shape = str(value).strip() if value is not None else "quality_first_wrapper"
+    allowed = {"quality_first_wrapper", "object_first_compact", "screen_device_black_screen_safe"}
+    if shape not in allowed:
+        raise RuntimeError(f"SCENE_PROP_CG_UNSUPPORTED_PROMPT_SHAPE: {shape}")
+    return shape
+
+
+def build_positive_prompt(
+    item_form_tags: list[str],
+    material_detail_tags: list[str],
+    placement_background_tags: list[str],
+    prompt_slots_data: dict,
+    semantic_segment: str,
+) -> tuple[str, str]:
+    """Build the live positive prompt.
+
+    Default keeps the README quality-first wrapper. Verified prompt research added
+    class-specific opt-ins for novaAnimeXL_ilV190:
+    - object_first_compact: better for simple physical props like keys/rings/vials.
+    - screen_device_black_screen_safe: verified by Unit 7M smartphone repeat and
+      Unit 7L tablet candidate; allows hardware marks but suppresses UI/text/logo.
+    """
+    shape = prompt_shape(prompt_slots_data)
+    tags = item_form_tags + material_detail_tags + placement_background_tags
+    tag_segment = ", ".join(tags)
+    if shape == "quality_first_wrapper":
+        positive = README_POSITIVE.format(
+            item_form=", ".join(item_form_tags),
+            material_detail=", ".join(material_detail_tags),
+            placement_background=", ".join(placement_background_tags),
+        )
+        if semantic_segment:
+            positive = positive + ", BREAK, " + semantic_segment
+        return positive, shape
+
+    quality_tail = "depth_of_field, masterpiece, best_quality, very_aesthetic, high_resolution"
+    if shape == "object_first_compact":
+        head = semantic_segment or tag_segment
+        positive = f"{head}, {tag_segment}, still_life, object_focus, no_humans, {quality_tail}"
+        return positive, shape
+
+    # screen_device_black_screen_safe
+    head = semantic_segment or "small plain smartphone on wooden tabletop, featureless empty black glass front, display powered off, completely blank dark reflective glass surface, single smartphone only"
+    positive = (
+        f"{head}, {tag_segment}, still_life, object_focus, no_humans, tabletop fills background, "
+        f"no logo, no icons, no app UI, no text, no corner marks, no colored marks, "
+        f"no monitor, no large display, simple modern item cut-in, {quality_tail}"
+    )
+    return positive, shape
 
 
 def load_json(path: Path):
@@ -215,12 +335,18 @@ def main() -> int:
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
-    positive = README_POSITIVE.format(
-        item_form=", ".join(item_form_tags),
-        material_detail=", ".join(material_detail_tags),
-        placement_background=", ".join(placement_background_tags),
+    semantic_segment = semantic_prompt_segment(prompt_slots_data)
+    positive, prompt_shape_used = build_positive_prompt(
+        item_form_tags,
+        material_detail_tags,
+        placement_background_tags,
+        prompt_slots_data,
+        semantic_segment,
     )
     negative = README_NEGATIVE
+    extra_negative_segment = extra_negative_prompt_segment(prompt_slots_data)
+    if extra_negative_segment:
+        negative = negative + ", " + extra_negative_segment
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     request_slug = slugify(args.asset_id or args.scene_id or 'prop')
@@ -245,6 +371,7 @@ def main() -> int:
     print("WORKFLOW", str(workflow_path))
     print("PATCHED_WORKFLOW", str(patched_workflow_path))
     print("PROMPT_POLICY", "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots")
+    print("PROMPT_SHAPE", prompt_shape_used)
     print("PROMPT_SLOTS", str(prompt_slots_path))
     print("TAXONOMY_SOURCE", taxonomy_meta['taxonomy_source'])
     print("TAXONOMY_PLACEHOLDER_TAGS", ", ".join(placeholder_tags))
@@ -288,6 +415,10 @@ def main() -> int:
         "prompt_source": "agent_authored_prompt_slots",
         "prompt_slots_path": str(prompt_slots_path),
         "prompt_slots": prompt_slots_data,
+        "prompt_context_notes": prompt_context_notes(prompt_slots_data),
+        "semantic_prompt_segment": semantic_segment,
+        "prompt_shape": prompt_shape_used,
+        "extra_negative_prompt_segment": extra_negative_segment,
         "prompt_policy": "README wrapper + agent-authored SQLite-verified prompt slots" if taxonomy_meta['taxonomy_source'] == 'db' else "README wrapper + agent-authored legacy taxonomy-verified prompt slots",
         "taxonomy_source": taxonomy_meta['taxonomy_source'],
         "taxonomy_db_path": taxonomy_meta['taxonomy_db_path'],

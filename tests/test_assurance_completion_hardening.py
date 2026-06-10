@@ -151,6 +151,41 @@ def test_manifest_schema_rejects_empty_asset_entries(tmp_path: Path):
     assert 'asset_manifest' in proc.stdout + proc.stderr or 'manifest' in proc.stdout + proc.stderr
 
 
+def test_queue_skips_archived_smoke_resolved_requests(tmp_path: Path):
+    project = make_project(tmp_path)
+    req = project / 'docs/production/asset_requests/audio_smoke.resolved_asset_requests.json'
+    write_json(req, {
+        'scene_id': 'audio_smoke',
+        'queue_status': 'archived_smoke',
+        'resolved_asset_requests': [{
+            'asset_id': 'bgm_smoke_probe',
+            'asset_type': 'bgm',
+            'decision': 'generate',
+            'status': 'needs_generation',
+            'recommended_workflow_id': 'audio_bgm_with_sfx',
+        }],
+    })
+    active = project / 'docs/production/asset_requests/active_scene.resolved_asset_requests.json'
+    write_json(active, {
+        'scene_id': 'active_scene',
+        'resolved_asset_requests': [{
+            'asset_id': 'bg_active_room',
+            'asset_type': 'background',
+            'decision': 'generate',
+            'status': 'needs_generation',
+            'recommended_workflow_id': 'scene_background',
+        }],
+    })
+
+    proc = run_cli('queue', '--project-root', str(project), '--resolved-glob', 'docs/production/asset_requests/*.resolved_asset_requests.json')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads((project / 'docs/production/owner_review_queue.json').read_text(encoding='utf-8'))
+    assert data['counts']['generation_items'] == 1
+    assert len(data['archived_items']) == 1
+    assert data['generation_items'][0]['asset_id'] == 'bg_active_room'
+    assert data['archived_items'][0]['asset_id'] == 'bgm_smoke_probe'
+
+
 def test_generation_runner_timeout_is_per_item_structured(tmp_path: Path):
     project = make_project(tmp_path)
     req = project / 'docs/production/asset_requests/scene.resolved_asset_requests.json'
@@ -193,7 +228,7 @@ def test_direct_smoke_runners_refuse_external_metadata_surfaces(tmp_path: Path):
     outside = tmp_path / 'outside_metadata.json'
     runners = [
         ('run_char_base_smoke.py', ['--prepare-only', '--out-metadata', str(outside)]),
-        ('run_audio_sfx_mmaudio_smoke.py', ['--prepare-only', '--out-metadata', str(outside)]),
+        ('run_audio_bgm_with_sfx_smoke.py', ['--prepare-only', '--out-metadata', str(outside)]),
     ]
     for script, extra in runners:
         proc = subprocess.run(
@@ -295,17 +330,21 @@ def test_validate_reports_missing_workflow_index_without_traceback(tmp_path: Pat
 
 
 
-def test_validate_accepts_contract_manifest_outside_legacy_game_data(tmp_path: Path):
-    project = make_project(tmp_path)
-    legacy_manifest = project / 'game/data/asset_manifest.json'
-    if legacy_manifest.exists():
-        legacy_manifest.unlink()
-    contract_path = project / 'docs/automation/project_contract.json'
-    contract = json.loads(contract_path.read_text(encoding='utf-8'))
-    contract_manifest = project / 'docs/automation/asset_manifest.json'
-    write_json(contract_manifest, {'version': '1.0.0', 'assets': []})
-    contract['manifest_path'] = contract_manifest.as_posix()
-    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+def add_required_project_docs(project: Path) -> None:
+    contract = json.loads((project / 'docs/automation/project_contract.json').read_text(encoding='utf-8'))
+    workflow_index = Path(contract['workflow_index'])
+    write_json(workflow_index, {'workflows': [
+        {'id': workflow_id, 'editable_fields': ['prompt']}
+        for workflow_id in [
+            'char_base',
+            'char_expression',
+            'char_alpha',
+            'scene_background',
+            'scene_prop_cg',
+            'scene_event_cg',
+            'audio_bgm_with_sfx',
+        ]
+    ]})
     design = project / 'docs/automation/vn_automation_design.md'
     design.parent.mkdir(parents=True, exist_ok=True)
     design.write_text('# Design\n\n## 1. 목표\n\n## 2. 고정 경로\n\n## 3. 역할 분담\n\n## 4. 데이터 흐름\n\n## 7. Workflow routing\n\n## 11. QA gates\n\n## 13. 첫 투입 milestone\n\n## 14. 금지 사항\n', encoding='utf-8')
@@ -320,5 +359,51 @@ def test_validate_accepts_contract_manifest_outside_legacy_game_data(tmp_path: P
         path = project / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('{}\n', encoding='utf-8')
+
+
+def test_validate_accepts_contract_manifest_outside_legacy_game_data(tmp_path: Path):
+    project = make_project(tmp_path)
+    legacy_manifest = project / 'game/data/asset_manifest.json'
+    if legacy_manifest.exists():
+        legacy_manifest.unlink()
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    contract_manifest = project / 'docs/automation/asset_manifest.json'
+    write_json(contract_manifest, {'version': '1.0.0', 'assets': []})
+    contract['manifest_path'] = contract_manifest.as_posix()
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    add_required_project_docs(project)
     proc = run_cli('validate', '--project-root', str(project), '--skip-obsidian')
     assert 'MISSING game/data/asset_manifest.json' not in (proc.stdout + proc.stderr)
+
+
+def test_validate_obsidian_title_scope_does_not_require_legacy_index_or_templates(tmp_path: Path):
+    project = make_project(tmp_path)
+    add_required_project_docs(project)
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    obs_root = Path(contract['obsidian_project_root'])
+    # This mirrors an evolved title-scoped vault: scene/current-state notes exist,
+    # but the old shared-vault 00_Index/Templates files are intentionally absent.
+    (obs_root / 'Scenes').mkdir(parents=True, exist_ok=True)
+    (obs_root / 'Scenes/scene_001.md').write_text('# Scene 001\n', encoding='utf-8')
+    (obs_root / 'Automation').mkdir(parents=True, exist_ok=True)
+    (obs_root / 'Automation/current_state.md').write_text('# Current State\n', encoding='utf-8')
+
+    proc = run_cli('validate', '--project-root', str(project))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert '00_Index.md' not in proc.stdout + proc.stderr
+    assert 'Templates/Scene_Note_Template.md' not in proc.stdout + proc.stderr
+
+
+def test_validate_rejects_unsafe_obsidian_scenes_glob(tmp_path: Path):
+    project = make_project(tmp_path)
+    add_required_project_docs(project)
+    contract_path = project / 'docs/automation/project_contract.json'
+    contract = json.loads(contract_path.read_text(encoding='utf-8'))
+    contract['obsidian_scenes_glob'] = '../other_title/*.md'
+    contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+    proc = run_cli('validate', '--project-root', str(project))
+    assert proc.returncode == 1
+    assert 'obsidian_scenes_glob must be relative under obsidian_project_root' in proc.stdout + proc.stderr

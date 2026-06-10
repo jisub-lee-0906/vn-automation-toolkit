@@ -19,8 +19,61 @@ from vn_product_config import build_project_paths, require_under  # noqa: E402
 
 SAFE_SCENE_ID_RE = re.compile(r'^[A-Za-z0-9_-]+$')
 SAFE_CAPTURE_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+SAFE_LABEL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,120}$')
 MAX_CAPTURES = 12
 MAX_WAIT_SECONDS = 15.0
+
+
+def find_label_line(project_root: Path, label: str, rel_file: str = 'game/script.rpy') -> tuple[str, int] | None:
+    """Return a project-relative file:line for a Ren'Py label.
+
+    Capture plans may specify either legacy ``warp: game/script.rpy:123`` or
+    stable ``warp_label: scene_001_opening``. Label-based plans avoid line drift
+    after script edits; this resolver keeps execution compatible with Ren'Py's
+    existing --warp file:line interface.
+    """
+    if not SAFE_LABEL_RE.fullmatch(label):
+        return None
+    rel_path = Path(str(rel_file).replace('\\', '/'))
+    if rel_path.is_absolute() or '..' in rel_path.parts or rel_path.suffix != '.rpy':
+        return None
+    target = (project_root / rel_path).resolve()
+    try:
+        require_under(target, project_root, 'capture label file')
+    except ValueError:
+        return None
+    if not target.exists():
+        return None
+    label_re = re.compile(rf'^label\s+{re.escape(label)}\s*(?:\([^)]*\))?\s*:')
+    for idx, line in enumerate(target.read_text(encoding='utf-8').splitlines(), 1):
+        if label_re.match(line.strip()):
+            return rel_path.as_posix(), idx
+    return None
+
+
+def resolve_capture_warp(cap: dict[str, Any], project_root: Path) -> str | None:
+    warp = cap.get('warp')
+    if isinstance(warp, str) and warp:
+        return warp
+    label = cap.get('warp_label')
+    if not isinstance(label, str) or not label:
+        return None
+    rel_file = cap.get('warp_file') or 'game/script.rpy'
+    if not isinstance(rel_file, str):
+        return None
+    resolved = find_label_line(project_root, label, rel_file)
+    if not resolved:
+        return None
+    rel, line = resolved
+    offset_raw = cap.get('warp_offset_lines', 0)
+    try:
+        offset = int(offset_raw)
+    except Exception:
+        return None
+    if offset < 0 or offset > 500:
+        return None
+    line += offset
+    return f'{rel}:{line}'
 
 
 def run_phase(cmd: list[str], cwd: Path, log: Path, timeout: int = 120) -> dict[str, Any]:
@@ -77,9 +130,9 @@ def validate_capture_plan(plan_path: Path, scene_id: str, project_root: Path) ->
             else:
                 if not (0 <= wait <= MAX_WAIT_SECONDS):
                     errors.append(f'captures[{idx}] wait_seconds must be between 0 and {MAX_WAIT_SECONDS}')
-            warp = cap.get('warp')
+            warp = resolve_capture_warp(cap, project_root)
             if not warp or not isinstance(warp, str) or ':' not in warp:
-                errors.append(f'captures[{idx}] missing warp file:line')
+                errors.append(f'captures[{idx}] missing warp file:line or resolvable warp_label')
             else:
                 rel, line = warp.rsplit(':', 1)
                 if not line.isdigit() or int(line) <= 0:

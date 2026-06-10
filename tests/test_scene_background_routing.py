@@ -33,6 +33,8 @@ def test_load_agent_authored_background_prompt_slots(tmp_path: Path):
             'time_mood': ['indoors', 'dawn'],
             'negative_tags': ['train_interior'],
             'negative_rationale': {'train_interior': 'avoid rail-transit misread'},
+            'semantic_prompt': 'empty noble bus terminal atmosphere',
+            'style_prompt': 'quiet dawn blue hour',
         },
         'visual_brief': 'Dawn city bus interior with no people.',
         'tag_rationale': {
@@ -50,5 +52,8 @@ def test_load_agent_authored_background_prompt_slots(tmp_path: Path):
     assert data['asset_id'] == 'bg_bus_interior_dawn'
     notes = runner.prompt_context_notes(data)
     assert notes['visual_brief'] == 'Dawn city bus interior with no people.'
+    assert notes['semantic_prompt'] == 'empty noble bus terminal atmosphere'
+    assert notes['style_prompt'] == 'quiet dawn blue hour'
+    assert runner.semantic_prompt_segment(data) == 'empty noble bus terminal atmosphere, quiet dawn blue hour'
     assert notes['tag_rationale']['bus_interior'] == 'primary semantic anchor'
     assert notes['negative_rationale']['train_interior'] == 'avoid rail-transit misread'

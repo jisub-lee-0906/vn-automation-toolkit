@@ -15,7 +15,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from vn_product_config import build_project_paths, require_under  # noqa: E402
-from validate_scene import SAFE_SCENE_ID_RE, validate_capture_plan  # noqa: E402
+from validate_scene import SAFE_SCENE_ID_RE, resolve_capture_warp, validate_capture_plan  # noqa: E402
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print('dry_run true')
         for cap in captures:
-            print('capture', cap.get('name'), cap.get('warp'))
+            print('capture', cap.get('name'), resolve_capture_warp(cap, paths.project_root))
         return 0
 
     if sys.platform != 'win32':
@@ -211,7 +211,10 @@ def main(argv: list[str] | None = None) -> int:
     quality_results: list[dict[str, Any]] = []
     for idx, cap in enumerate(captures, 1):
         name = cap.get('name') or f'capture_{idx:02d}'
-        warp = cap['warp']
+        warp = resolve_capture_warp(cap, paths.project_root)
+        if not warp:
+            print(f'CAPTURE_SCENE_FAILED: cannot resolve warp for {name}')
+            return 1
         out = (out_dir / f'{idx:02d}_{name}.png').resolve()
         try:
             require_under(out, out_dir, 'screenshot output')

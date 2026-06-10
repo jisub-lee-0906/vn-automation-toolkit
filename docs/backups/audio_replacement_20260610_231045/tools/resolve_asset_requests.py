@@ -32,7 +32,9 @@ ASSET_TYPE_ALIASES = {
     'transparent_sprite': 'transparent_sprite',
     'char_alpha': 'transparent_sprite',
     'bgm': 'bgm',
+    'audio_bgm_ace': 'bgm',
     'sfx': 'sfx',
+    'audio_sfx_mmaudio': 'sfx',
 }
 
 DEFAULT_WORKFLOW_ROUTES = {
@@ -43,25 +45,8 @@ DEFAULT_WORKFLOW_ROUTES = {
     'background': 'scene_background',
     'event_cg': 'scene_event_cg',
     'prop_cg': 'scene_prop_cg',
-    'bgm': 'audio_bgm_with_sfx',
-    'sfx': 'audio_bgm_with_sfx',
-}
-
-AUDIO_ROLE_CONTRACTS = {
-    'bgm': {
-        'audio_role': 'audio_bgm',
-        'prompt_shape': 'instrumentation + musical form/rhythm + mood + short role',
-        'default_mode': 'Music',
-        'default_duration': 24.0,
-        'role_contract_path': 'audio_bgm_with_sfx/roles/audio_bgm.md',
-    },
-    'sfx': {
-        'audio_role': 'audio_sfx',
-        'prompt_shape': 'short positive-only natural-language cue + one/two material or timbre colors',
-        'default_mode': 'One-shot',
-        'default_duration': 2.5,
-        'role_contract_path': 'audio_bgm_with_sfx/roles/audio_sfx.md',
-    },
+    'bgm': 'audio_bgm_ace',
+    'sfx': 'audio_sfx_mmaudio',
 }
 
 TOKEN_RE = re.compile(r'[a-z0-9]+')
@@ -92,24 +77,6 @@ def normalize_type(asset_type: str | None) -> str:
         return 'unknown'
     key = str(asset_type).strip().lower().replace('-', '_')
     return ASSET_TYPE_ALIASES.get(key, key)
-
-
-def audio_contract_for(asset_type: str) -> dict[str, Any] | None:
-    return AUDIO_ROLE_CONTRACTS.get(asset_type)
-
-
-def with_audio_contract_fields(item: dict[str, Any], asset_type: str) -> dict[str, Any]:
-    contract = audio_contract_for(asset_type)
-    if not contract:
-        return item
-    return {
-        **item,
-        'recommended_audio_role': contract['audio_role'],
-        'recommended_prompt_shape': contract['prompt_shape'],
-        'recommended_audio_mode': contract['default_mode'],
-        'recommended_audio_duration': contract['default_duration'],
-        'recommended_role_contract_path': contract['role_contract_path'],
-    }
 
 
 def tokens(*parts: object) -> set[str]:
@@ -274,7 +241,7 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
         else:
             decision = 'reuse_manifest'
             status = 'resolved'
-        return with_audio_contract_fields({
+        return {
             **request,
             'normalized_asset_type': req_type,
             'status': status,
@@ -282,11 +249,11 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
             'manifest_matches': manifest_hits,
             'candidate_matches': [],
             'recommended_workflow_id': workflow_routes.get(req_type),
-        }, req_type)
+        }
 
     candidates = candidate_matches(generation_runs_root, request)
     if candidates:
-        return with_audio_contract_fields({
+        return {
             **request,
             'normalized_asset_type': req_type,
             'status': 'needs_owner_review',
@@ -294,10 +261,10 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
             'manifest_matches': [],
             'candidate_matches': candidates,
             'recommended_workflow_id': workflow_routes.get(req_type),
-        }, req_type)
+        }
 
     workflow_id = workflow_routes.get(req_type)
-    return with_audio_contract_fields({
+    return {
         **request,
         'normalized_asset_type': req_type,
         'status': 'needs_generation' if workflow_id else 'needs_manual_route',
@@ -305,7 +272,7 @@ def resolve_request(root: Path, manifest: dict[str, Any], workflow_routes: dict[
         'manifest_matches': [],
         'candidate_matches': [],
         'recommended_workflow_id': workflow_id,
-    }, req_type)
+    }
 
 
 def build_resolution(args: argparse.Namespace) -> dict[str, Any]:

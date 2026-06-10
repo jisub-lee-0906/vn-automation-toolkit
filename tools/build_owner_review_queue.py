@@ -33,13 +33,22 @@ def iter_resolved(project_root: Path, pattern: str) -> list[Path]:
     return paths
 
 
+ARCHIVED_STATUSES = {'archived', 'archived_smoke', 'closed', 'superseded', 'done_no_queue'}
+
+
+def is_archived(value: Any) -> bool:
+    return str(value or '').strip().lower() in ARCHIVED_STATUSES
+
+
 def collect_items(paths: list[Path]) -> dict[str, Any]:
     review_items = []
     generation_items = []
     blocked_items = []
+    archived_items = []
     for path in paths:
         data = load_json(path)
         scene_id = data.get('scene_id') or path.stem.replace('.resolved_asset_requests', '')
+        file_archived = is_archived(data.get('queue_status') or data.get('status'))
         for item in data.get('resolved_asset_requests', []) or []:
             row = {
                 'scene_id': scene_id,
@@ -48,11 +57,15 @@ def collect_items(paths: list[Path]) -> dict[str, Any]:
                 'asset_type': item.get('asset_type'),
                 'decision': item.get('decision'),
                 'status': item.get('status'),
+                'queue_status': item.get('queue_status') or data.get('queue_status'),
                 'recommended_workflow_id': item.get('recommended_workflow_id'),
                 'candidate_matches': item.get('candidate_matches', []),
                 'manifest_matches': item.get('manifest_matches', []),
                 'description': item.get('description', ''),
             }
+            if file_archived or is_archived(item.get('queue_status')) or is_archived(item.get('status')) or is_archived(item.get('decision')):
+                archived_items.append(row)
+                continue
             if item.get('decision') == 'review_existing_candidate':
                 review_items.append(row)
             elif item.get('decision') == 'generate':
@@ -63,6 +76,7 @@ def collect_items(paths: list[Path]) -> dict[str, Any]:
         'review_items': review_items,
         'generation_items': generation_items,
         'blocked_items': blocked_items,
+        'archived_items': archived_items,
     }
 
 

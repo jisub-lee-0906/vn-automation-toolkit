@@ -13,7 +13,8 @@ WORKFLOW_IDS = [
     'scene_background',
     'scene_prop_cg',
     'scene_event_cg',
-    'audio_bgm_with_sfx',
+    'audio_bgm_ace',
+    'audio_sfx_mmaudio',
 ]
 
 

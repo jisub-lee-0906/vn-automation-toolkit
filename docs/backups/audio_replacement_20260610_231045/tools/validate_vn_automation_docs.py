@@ -35,7 +35,8 @@ EXPECTED_WORKFLOW_IDS = {
     'scene_background',
     'scene_prop_cg',
     'scene_event_cg',
-    'audio_bgm_with_sfx',
+    'audio_bgm_ace',
+    'audio_sfx_mmaudio',
 }
 DESIGN_SECTIONS = [
     '## 1. 목표',
@@ -56,11 +57,13 @@ REQUIRED_PROJECT_RELS = [
     'docs/automation/schemas/asset_manifest.schema.json',
     'docs/automation/schemas/character_asset.schema.json',
 ]
-# Legacy init still creates these files, but title-scoped vaults are allowed to
-# evolve without carrying shared-vault index/template files forever. Projects that
-# need stricter Obsidian file checks can opt in with `obsidian_required_files` in
-# project_contract.json.
-DEFAULT_OBSIDIAN_REQUIRED_FILES: list[str] = []
+REQUIRED_OBSIDIAN_RELS = [
+    '00_Index.md',
+    'Automation/VN_Automation_Design.md',
+    'Templates/Scene_Note_Template.md',
+    'Templates/Character_Note_Template.md',
+    'Templates/Asset_Request_Template.md',
+]
 
 SAFE_ASSET_ID_RE = re.compile(r'^[a-z][a-z0-9_]{1,80}$')
 SAFE_RENPY_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*( [a-z0-9_]+)*$')
@@ -185,44 +188,6 @@ def validate_manifest(paths, errors: list[str]) -> None:
                 errors.append(f'asset_manifest promoted_path missing: {promoted}')
 
 
-def validate_obsidian_scope(paths, errors: list[str]) -> None:
-    contract = paths.contract
-    obs_root_raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault')
-    if not obs_root_raw:
-        errors.append('CONTRACT missing obsidian_project_root/obsidian_vault for obsidian validation')
-        return
-    obs_root = Path(obs_root_raw)
-    if not obs_root.exists():
-        errors.append(f'MISSING obsidian_project_root: {obs_root}')
-        return
-    scenes_glob = contract.get('obsidian_scenes_glob') or ('Scenes/*.md' if contract.get('obsidian_project_root') else 'VN/Scenes/*.md')
-    if not is_safe_project_relative_path(str(scenes_glob)):
-        errors.append(f'obsidian_scenes_glob must be relative under obsidian_project_root: {scenes_glob}')
-        return
-    # Validate that the glob resolves under the configured title-scoped root.  The
-    # glob may legitimately match zero files in a freshly initialized title, but
-    # it must not escape to another title/vault.
-    glob_parent = (obs_root / Path(str(scenes_glob).replace('\\', '/')).parent).resolve()
-    try:
-        glob_parent.relative_to(obs_root.resolve())
-    except ValueError:
-        errors.append(f'obsidian_scenes_glob must stay under obsidian_project_root: {scenes_glob}')
-    if not glob_parent.exists():
-        errors.append(f'MISSING obsidian scenes directory for glob {scenes_glob}: {glob_parent}')
-    required_files = contract.get('obsidian_required_files', DEFAULT_OBSIDIAN_REQUIRED_FILES)
-    if required_files is None:
-        required_files = []
-    if not isinstance(required_files, list):
-        errors.append('CONTRACT obsidian_required_files must be a list when provided')
-        return
-    legacy_prefix = Path('VN') if not contract.get('obsidian_project_root') else Path()
-    for rel in required_files:
-        if not isinstance(rel, str) or not is_safe_project_relative_path(rel):
-            errors.append(f'CONTRACT unsafe obsidian_required_files entry: {rel!r}')
-            continue
-        require(obs_root / legacy_prefix / rel, 'obsidian:' + str(legacy_prefix / rel), errors)
-
-
 def validate_project(paths, validate_obsidian: bool = True) -> list[str]:
     errors: list[str] = []
     validate_contract(paths, errors)
@@ -230,7 +195,14 @@ def validate_project(paths, validate_obsidian: bool = True) -> list[str]:
     for rel in REQUIRED_PROJECT_RELS:
         require(paths.project_root / rel, rel, errors)
     if validate_obsidian:
-        validate_obsidian_scope(paths, errors)
+        obs_root_raw = paths.contract.get('obsidian_project_root') or paths.contract.get('obsidian_vault')
+        if obs_root_raw:
+            obs_root = Path(obs_root_raw)
+            legacy_prefix = Path('VN') if not paths.contract.get('obsidian_project_root') else Path()
+            for rel in REQUIRED_OBSIDIAN_RELS:
+                require(obs_root / legacy_prefix / rel, 'obsidian:' + str(legacy_prefix / rel), errors)
+        else:
+            errors.append('CONTRACT missing obsidian_project_root/obsidian_vault for obsidian validation')
     validate_manifest(paths, errors)
     return errors
 

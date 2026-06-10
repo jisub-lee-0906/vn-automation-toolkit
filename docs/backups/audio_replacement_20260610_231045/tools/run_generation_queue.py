@@ -19,13 +19,13 @@ from qa_asset_file import inspect_asset  # noqa: E402
 from vn_product_config import build_project_paths, require_under, resolve_project_path, validate_project_glob  # noqa: E402
 
 DEFAULT_RUNNERS = {
-    'audio_bgm_with_sfx': f'{sys.executable} {TOOLS / "run_audio_bgm_with_sfx_smoke.py"}',
+    'audio_sfx_mmaudio': f'{sys.executable} {TOOLS / "run_audio_sfx_mmaudio_smoke.py"}',
     'char_base': f'{sys.executable} {TOOLS / "run_char_base_smoke.py"}',
     'scene_background': f'{sys.executable} {TOOLS / "run_scene_background_smoke.py"}',
     'scene_event_cg': f'{sys.executable} {TOOLS / "run_scene_event_cg_smoke.py"}',
     'scene_prop_cg': f'{sys.executable} {TOOLS / "run_scene_prop_cg_smoke.py"}',
 }
-PROMPT_SENSITIVE_WORKFLOWS = {'scene_background', 'scene_event_cg', 'scene_prop_cg', 'char_base', 'audio_bgm_with_sfx'}
+PROMPT_SENSITIVE_WORKFLOWS = {'scene_background', 'scene_event_cg', 'scene_prop_cg', 'char_base', 'audio_sfx_mmaudio'}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -67,10 +67,6 @@ def collect_generate_items(project_root: Path, resolved_glob: str) -> list[dict[
                 'prompt_slots_path': item.get('prompt_slots_path'),
                 'prompt_slots': item.get('prompt_slots'),
                 'source_char_base_metadata': item.get('source_char_base_metadata') or item.get('char_base_metadata') or item.get('char_base_metadata_path'),
-                'recommended_audio_role': item.get('recommended_audio_role'),
-                'recommended_prompt_shape': item.get('recommended_prompt_shape'),
-                'recommended_audio_mode': item.get('recommended_audio_mode'),
-                'recommended_audio_duration': item.get('recommended_audio_duration'),
             })
     return items
 
@@ -156,8 +152,6 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str, runne
     ]
     if prompt_slots_path is not None:
         command += ['--prompt-slots', str(prompt_slots_path)]
-    if workflow_id == 'audio_bgm_with_sfx' and item.get('asset_type'):
-        command += ['--asset-type', str(item.get('asset_type'))]
     if workflow_id == 'scene_event_cg':
         source_char_base_metadata = item.get('source_char_base_metadata')
         if not source_char_base_metadata:
