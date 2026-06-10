@@ -70,6 +70,51 @@ def capture_window(pid: int, out_path: Path) -> None:
     img.save(out_path)
 
 
+def analyze_screenshot_quality(path: Path, *, allow_blank: bool = False) -> dict[str, Any]:
+    """Detect accidental black/blank captures from bad Ren'Py warp timing.
+
+    The window title/chrome can make a fully black game frame look non-black if
+    the whole screenshot is averaged, so analyze the central gameplay area and
+    ignore a small top band.
+    """
+    from PIL import Image, ImageStat  # type: ignore
+
+    with Image.open(path) as img:
+        rgb = img.convert('RGB')
+        width, height = rgb.size
+        left = int(width * 0.04)
+        top = int(height * 0.08)
+        right = int(width * 0.96)
+        bottom = int(height * 0.96)
+        if right <= left or bottom <= top:
+            region = rgb
+        else:
+            region = rgb.crop((left, top, right, bottom))
+        gray = region.convert('L')
+        stat = ImageStat.Stat(gray)
+        mean = float(stat.mean[0])
+        stdev = float(stat.stddev[0])
+        hist = gray.histogram()
+        total = max(1, sum(hist))
+        dark_ratio = sum(hist[:16]) / total
+        light_ratio = sum(hist[240:]) / total
+
+    metrics = {
+        'mean_luma': round(mean, 3),
+        'stdev_luma': round(stdev, 3),
+        'dark_ratio': round(dark_ratio, 6),
+        'light_ratio': round(light_ratio, 6),
+        'crop': {'left_pct': 0.04, 'top_pct': 0.08, 'right_pct': 0.96, 'bottom_pct': 0.96},
+    }
+    if allow_blank:
+        return {'status': 'PASS', 'reason': 'blank_allowed', **metrics}
+    if (mean <= 12 and stdev <= 10) or (dark_ratio >= 0.94 and mean <= 30):
+        return {'status': 'FAIL', 'reason': 'mostly_black_frame', **metrics}
+    if mean >= 245 and stdev <= 6 and light_ratio >= 0.94:
+        return {'status': 'FAIL', 'reason': 'mostly_blank_white_frame', **metrics}
+    return {'status': 'PASS', 'reason': 'content_present', **metrics}
+
+
 def make_contact_sheet(images: list[Path], labels: list[str], out_path: Path) -> None:
     from PIL import Image, ImageDraw  # type: ignore
 
@@ -102,7 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--out-dir', default='')
     parser.add_argument('--dry-run', action='store_true', help='Validate plan and print intended captures without launching RenPy.')
     parser.add_argument('--runtime-timeout', type=int, default=120, help='Overall timeout seconds for each RenPy capture process.')
+    parser.add_argument('--allow-blank-captures', action='store_true', help='Allow intentional black/blank captures. Default fails closed on likely bad warp timing.')
     args = parser.parse_args(argv)
+
 
     if not SAFE_SCENE_ID_RE.match(args.scene_id):
         print(f'CAPTURE_SCENE_REFUSED: unsafe scene_id: {args.scene_id}')
@@ -161,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
 
     screenshots: list[Path] = []
     labels: list[str] = []
+    quality_results: list[dict[str, Any]] = []
     for idx, cap in enumerate(captures, 1):
         name = cap.get('name') or f'capture_{idx:02d}'
         warp = cap['warp']
@@ -178,6 +226,17 @@ def main(argv: list[str] | None = None) -> int:
             if time.time() > deadline:
                 raise TimeoutError(f'capture {name} exceeded timeout before screenshot')
             capture_window(proc.pid, out)
+            quality = analyze_screenshot_quality(out, allow_blank=bool(cap.get('allow_blank') or args.allow_blank_captures))
+            quality_result = {'name': name, 'path': str(out), 'warp': warp, **quality}
+            quality_results.append(quality_result)
+            if quality['status'] != 'PASS':
+                qa_path = out_dir / 'capture_quality_failed.json'
+                qa_path.write_text(json.dumps(quality_results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+                raise RuntimeError(
+                    f"capture {name} failed image quality gate: {quality['reason']} "
+                    f"mean={quality['mean_luma']} stdev={quality['stdev_luma']} "
+                    f"dark_ratio={quality['dark_ratio']} light_ratio={quality['light_ratio']}"
+                )
             if proc.poll() not in (None, 0):
                 stdout, stderr = proc.communicate(timeout=1)
                 raise RuntimeError(f'RenPy exited with {proc.returncode}: {stderr or stdout}')
@@ -200,7 +259,15 @@ def main(argv: list[str] | None = None) -> int:
         print('captured', name, out)
     sheet = out_dir / f'{args.scene_id}_contact_sheet.png'
     make_contact_sheet(screenshots, labels, sheet)
-    manifest = {'scene_id': args.scene_id, 'capture_plan': str(plan_path), 'screenshots': [str(p) for p in screenshots], 'contact_sheet': str(sheet)}
+    failed_quality = [item for item in quality_results if item.get('status') != 'PASS']
+    manifest = {
+        'scene_id': args.scene_id,
+        'capture_plan': str(plan_path),
+        'screenshots': [str(p) for p in screenshots],
+        'contact_sheet': str(sheet),
+        'image_quality': quality_results,
+        'image_quality_status': 'PASS' if not failed_quality else 'FAIL',
+    }
     (out_dir / 'capture_manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('contact_sheet', sheet)
     return 0

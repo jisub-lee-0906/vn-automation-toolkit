@@ -312,6 +312,58 @@ def test_capture_plan_rejects_malformed_warp_and_too_many_captures(tmp_path: Pat
     assert 'warp line must be positive integer' in report
 
 
+
+def test_capture_scene_image_quality_flags_black_and_blank_frames(tmp_path: Path):
+    import importlib.util
+    from PIL import Image
+
+    spec = importlib.util.spec_from_file_location('capture_scene_under_test', TOOLS / 'capture_scene_contact_sheet.py')
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    black = tmp_path / 'black.png'
+    white = tmp_path / 'white.png'
+    normal_path = tmp_path / 'normal.png'
+
+    Image.new('RGB', (1280, 720), (0, 0, 0)).save(black)
+    Image.new('RGB', (1280, 720), (255, 255, 255)).save(white)
+    normal_img = Image.new('RGB', (1280, 720), (20, 20, 30))
+    # Add a bright VN-like sprite/textbox region so it is clearly not blank.
+    for x in range(120, 520):
+        for y in range(120, 620):
+            normal_img.putpixel((x, y), (180, 40, 50))
+    for x in range(0, 1280):
+        for y in range(560, 720):
+            normal_img.putpixel((x, y), (35, 20, 40))
+    normal_img.save(normal_path)
+
+    black_qa = module.analyze_screenshot_quality(black)
+    white_qa = module.analyze_screenshot_quality(white)
+    normal_qa = module.analyze_screenshot_quality(normal_path)
+
+    assert black_qa['status'] == 'FAIL'
+    assert black_qa['reason'] == 'mostly_black_frame'
+    assert white_qa['status'] == 'FAIL'
+    assert white_qa['reason'] == 'mostly_blank_white_frame'
+    assert normal_qa['status'] == 'PASS'
+
+
+def test_capture_scene_image_quality_can_be_disabled_for_intentional_blank(tmp_path: Path):
+    import importlib.util
+    from PIL import Image
+
+    spec = importlib.util.spec_from_file_location('capture_scene_under_test', TOOLS / 'capture_scene_contact_sheet.py')
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    black = tmp_path / 'black.png'
+    Image.new('RGB', (1280, 720), (0, 0, 0)).save(black)
+    qa = module.analyze_screenshot_quality(black, allow_blank=True)
+    assert qa['status'] == 'PASS'
+    assert qa['reason'] == 'blank_allowed'
+
 def test_capture_scene_refuses_runtime_when_dependencies_missing_even_with_fake_renpy(tmp_path: Path):
     project = make_min_project(tmp_path)
     fake = tmp_path / 'renpy_fake.py'

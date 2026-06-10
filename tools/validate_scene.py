@@ -134,7 +134,15 @@ def write_report(out_dir: Path, manifest: dict[str, Any]) -> None:
                 lines.append(f"  - {err}")
         if gate.get('log'):
             lines.append(f"  - log: `{gate['log']}`")
+        if gate.get('image_quality_status'):
+            lines.append(f"  - image_quality: `{gate['image_quality_status']}`")
+            for item in gate.get('image_quality', [])[:12]:
+                lines.append(
+                    f"  - capture `{item.get('name')}`: `{item.get('status')}` "
+                    f"({item.get('reason')}, mean={item.get('mean_luma')}, stdev={item.get('stdev_luma')})"
+                )
     out_dir.joinpath('report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,7 +186,19 @@ def main(argv: list[str] | None = None) -> int:
         renpy = paths.contract.get('renpy_sdk_exe')
         if renpy:
             gates['renpy_lint'] = run_phase([renpy, str(paths.project_root), 'lint'], paths.project_root, out_dir / 'renpy_lint.log', timeout=args.runtime_timeout)
-            gates['runtime_capture'] = run_phase([sys.executable, str(TOOLS / 'capture_scene_contact_sheet.py'), '--project-root', str(paths.project_root), '--scene-id', args.scene_id, '--capture-plan', str(plan_path), '--out-dir', str(out_dir / 'gameplay_screenshots'), '--runtime-timeout', str(args.runtime_timeout)], paths.project_root, out_dir / 'runtime_capture.log', timeout=args.runtime_timeout + 10)
+            capture_out_dir = out_dir / 'gameplay_screenshots'
+            gates['runtime_capture'] = run_phase([sys.executable, str(TOOLS / 'capture_scene_contact_sheet.py'), '--project-root', str(paths.project_root), '--scene-id', args.scene_id, '--capture-plan', str(plan_path), '--out-dir', str(capture_out_dir), '--runtime-timeout', str(args.runtime_timeout)], paths.project_root, out_dir / 'runtime_capture.log', timeout=args.runtime_timeout + 10)
+            capture_manifest = capture_out_dir / 'capture_manifest.json'
+            if capture_manifest.exists():
+                try:
+                    capture_data = json.loads(capture_manifest.read_text(encoding='utf-8'))
+                    gates['runtime_capture']['image_quality_status'] = capture_data.get('image_quality_status')
+                    gates['runtime_capture']['image_quality'] = capture_data.get('image_quality', [])
+                    if capture_data.get('image_quality_status') == 'FAIL':
+                        gates['runtime_capture']['status'] = 'FAIL'
+                except Exception as exc:
+                    gates['runtime_capture']['image_quality_status'] = 'UNKNOWN'
+                    gates['runtime_capture']['image_quality_error'] = str(exc)
         else:
             gates['renpy_lint'] = {'status': 'SKIP', 'reason': 'renpy_sdk_exe not configured'}
             gates['runtime_capture'] = {'status': 'SKIP', 'reason': 'renpy_sdk_exe not configured'}
