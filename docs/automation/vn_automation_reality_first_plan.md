@@ -27,9 +27,9 @@
 
 모든 production asset은 `game/data/asset_manifest.json`에 등록한다. Ren'Py가 파일을 직접 참조하고 있어도 manifest에 없으면 자동화 관점에서는 추적 불능으로 본다.
 
-### 2.3 Generate once, reuse many
+### 2.3 Fresh per project, reuse within story
 
-ComfyUI 재생성은 비용이 크다. 먼저 manifest와 기존 후보를 검색하고, 부족할 때만 생성한다.
+Cross-title asset reuse is avoided by default because players can recognize recycled art/audio across games. Search the selected title's own manifest and existing candidates only when the same game/story intentionally repeats an established location, prop, character sprite, or UI identity. For a new project or unrelated story context, generate fresh candidates.
 
 ### 2.4 Canonical workflow 불변
 
@@ -48,7 +48,8 @@ Ren'Py `.rpy` 자동 수정은 위험하다. 먼저 참조 검증기와 manifest
    - docs/assets sidecar scan
 
 2. Decide
-   - existing usable asset 있으면 재사용
+   - same-title established asset이 story상 반복되어야 하면 재사용
+   - 다른 게임/다른 프로젝트/무관한 story context이면 fresh candidate 생성
    - 없으면 asset request 생성
    - workflow route 결정
 

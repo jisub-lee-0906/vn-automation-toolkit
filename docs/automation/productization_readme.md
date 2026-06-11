@@ -351,7 +351,7 @@ Recommended manual checks:
 
 ## 10. Safety rules
 
-- Generate once, reuse many.
+- Generate fresh assets for new projects or unrelated story contexts; reuse only same-title assets that intentionally recur in the story.
 - Never promote without owner approval.
 - Never patch `.rpy` blindly before asset refs and integration gaps are understood.
 - Treat generated candidates as untrusted until file QA and visual/audio review pass.

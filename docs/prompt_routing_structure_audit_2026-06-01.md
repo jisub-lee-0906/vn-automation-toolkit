@@ -39,7 +39,7 @@
 
 - `tools/run_char_base_smoke.py`
   - Previous risk: it was a legacy smoke-test/default character generator with fixed character/outfit placeholder tags such as `school_uniform`.
-  - Fix: char_base now requires agent-authored `character_features` and `outfit_detail` prompt slots under `docs/production/prompt_slots/`, validates them against `danbooru_tag.csv`, supports prepare-only metadata, and keeps seed recording for downstream scene_event_cg reuse.
+  - Fix: char_base now requires agent-authored `character_features` and `outfit_detail` prompt slots under `docs/production/prompt_slots/`, validates them through the current workflow-pack Danbooru tag oracle (SQLite primary; legacy CSV only as explicit fallback/test input), supports prepare-only metadata, and keeps seed recording for downstream scene_event_cg reuse.
 
 ## New contract
 
