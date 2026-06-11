@@ -49,7 +49,7 @@ Use these status values:
 
 | Order | ID | Workflow / Axis | Generic Asset ID | Status | Intent Summary | Candidate/Metadata Paths | User QA Result / Notes |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
-| 1 | GAGT-01 | `scene_background` baseline location | `bg_core_location_day_test` | `not_started` | Generate a recognizable, reusable core VN location in baseline lighting. |  |  |
+| 1 | GAGT-01 | `scene_background` baseline location | `bg_core_location_day_test` | `owner_reviewing` | Generated fresh daylight noble archive/library core-location candidates for user semantic QA. | Summary: `E:/workspace/renpy-project/sihanbu_villainess_badend/docs/automation/generation_runs/gagt01_bg_core_location_day_test_summary_20260611_1319.json`; contact sheet: `E:/workspace/renpy-project/sihanbu_villainess_badend/docs/automation/review_contact_sheets/gagt01_bg_core_location_day_test_contact_sheet_20260611_1319.jpg` | Awaiting user QA: approve exact candidate / hold / reroll seed / prompt-change / reject / route limitation evidence. |
 | 2 | GAGT-02 | `scene_background` mood variant | `bg_core_location_mood_variant_test` | `not_started` | Generate the same location class under a different mood/time/weather. |  |  |
 | 3 | GAGT-03 | `scene_background` secondary/private location | `bg_private_location_test` | `not_started` | Generate a smaller/private/transitional location for visual variety. |  |  |
 | 4 | GAGT-04 | `scene_prop_cg` single object | `prop_single_key_object_test` | `not_started` | Generate one clear key prop as a close-up cut-in. |  |  |
