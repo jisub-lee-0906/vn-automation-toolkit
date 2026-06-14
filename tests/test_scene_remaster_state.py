@@ -25,8 +25,10 @@ def write_contract(root: Path) -> None:
 def test_scene_remaster_state_writes_state_patch_and_pool(tmp_path: Path) -> None:
     write_contract(tmp_path)
     qa = tmp_path / 'docs/validation/scene001/report.md'
+    supplemental = tmp_path / 'docs/validation/scene001/menu_harness.md'
     qa.parent.mkdir(parents=True)
     qa.write_text('# QA\n', encoding='utf-8')
+    supplemental.write_text('# Menu Harness\n', encoding='utf-8')
     candidate = tmp_path / 'docs/automation/audio_regen_20260613/recommended_review_audio/sfx_red_system_alert_v2.mp3'
     candidate.parent.mkdir(parents=True)
     candidate.write_bytes(b'audio')
@@ -39,6 +41,7 @@ def test_scene_remaster_state_writes_state_patch_and_pool(tmp_path: Path) -> Non
         '--asset-policy', 'scene_local_preview_only',
         '--changed-file', 'game/script.rpy',
         '--qa-report', str(qa),
+        '--supplemental-qa-report', str(supplemental),
         '--known-blocker', 'menu capture needs proof',
         '--next-step', 'contract feedback polish',
         '--candidate', f'sfx_red_system_alert_v2|audio|{candidate}|Scene 001 alert preview only',
@@ -49,9 +52,11 @@ def test_scene_remaster_state_writes_state_patch_and_pool(tmp_path: Path) -> Non
     assert state['latest_patch_id'] == 'scene001_patch1'
     assert state['permanent_asset_changes'] is False
     assert state['latest_qa_report'] == 'docs/validation/scene001/report.md'
+    assert state['supplemental_qa_reports'] == ['docs/validation/scene001/menu_harness.md']
     assert state['candidate_count'] == 1
     patch = json.loads((base / 'patches/scene001_patch1.json').read_text(encoding='utf-8'))
     assert patch['asset_policy'] == 'scene_local_preview_only'
+    assert patch['supplemental_qa_reports'] == ['docs/validation/scene001/menu_harness.md']
     pool = json.loads((base / 'scene_pools/scene_001_red_system_contract.json').read_text(encoding='utf-8'))
     assert pool['global_replacement_allowed'] is False
     assert pool['promotion_requires_owner_approval'] is True
@@ -77,8 +82,9 @@ def test_scene_remaster_state_check_existing_passes_without_writing(tmp_path: Pa
     qa = tmp_path / 'docs/validation/scene001/report.md'
     guard = tmp_path / 'docs/validation/scene001/guard.json'
     sheet = tmp_path / 'docs/validation/scene001/contact_sheet.png'
+    supplemental = tmp_path / 'docs/validation/scene001/menu_harness.md'
     candidate = tmp_path / 'docs/automation/audio_regen_20260613/recommended_review_audio/sfx_red_system_alert_v2.mp3'
-    for path in [qa, guard, sheet, candidate]:
+    for path in [qa, guard, sheet, supplemental, candidate]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'ok')
     pool = base / 'scene_pools/scene_001_red_system_contract.json'
@@ -112,6 +118,7 @@ def test_scene_remaster_state_check_existing_passes_without_writing(tmp_path: Pa
         'qa_report': 'docs/validation/scene001/report.md',
         'guard_report': 'docs/validation/scene001/guard.json',
         'capture_sheets': ['docs/validation/scene001/contact_sheet.png'],
+        'supplemental_qa_reports': ['docs/validation/scene001/menu_harness.md'],
         'scene_pool': 'docs/automation/scene_remaster/scene_pools/scene_001_red_system_contract.json',
     }), encoding='utf-8')
     current = base / 'current_state.json'
@@ -126,6 +133,7 @@ def test_scene_remaster_state_check_existing_passes_without_writing(tmp_path: Pa
         'latest_qa_report': 'docs/validation/scene001/report.md',
         'latest_guard_report': 'docs/validation/scene001/guard.json',
         'capture_sheets': ['docs/validation/scene001/contact_sheet.png'],
+        'supplemental_qa_reports': ['docs/validation/scene001/menu_harness.md'],
         'patch_manifest': 'docs/automation/scene_remaster/patches/scene001_patch1.json',
         'scene_pool': 'docs/automation/scene_remaster/scene_pools/scene_001_red_system_contract.json',
         'candidate_count': 1,

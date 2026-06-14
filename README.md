@@ -96,7 +96,7 @@ vn-auto scene-state --project-root "E:/workspace/renpy-project/my_title" --scene
 vn-auto audit --project-root "E:/workspace/renpy-project/my_title" --strict
 ```
 
-For scene-by-scene vertical polish, use `scene-guard` after script patches to compare the backed-up before slice with the live script and enforce labels/jumps/menu/variable invariants. Use `scene-state` to write the current scene-local remaster state and preview-only candidate pool; `scene-state --check-existing` validates the existing `current_state.json`, patch manifest, guard/QA report links, capture sheets, and preview pool policy without modifying files.
+For scene-by-scene vertical polish, use `scene-guard` after script patches to compare the backed-up before slice with the live script and enforce labels/jumps/menu/variable invariants. Use `scene-state` to write the current scene-local remaster state and preview-only candidate pool; `scene-state --check-existing` validates the existing `current_state.json`, patch manifest, guard/QA report links, capture sheets, supplemental QA reports, and preview pool policy without modifying files. Use `--supplemental-qa-report` for follow-up QA evidence, such as a menu harness report, that should not replace the primary patch QA report.
 
 `stack-doctor` is the generic Hermes + ComfyUI + Obsidian readiness gate: it checks Hermes CLI availability, ComfyUI API health, Obsidian roots, and optional workflow/output roots. Use it before long automated runs to catch missing vaults, dead endpoints, or multiple healthy ComfyUI endpoints that could cause history/output split-brain.
 

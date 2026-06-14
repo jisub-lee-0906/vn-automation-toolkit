@@ -104,6 +104,8 @@ def validate_existing_scene_state(paths: Any, scene_id: str) -> tuple[int, list[
     scene_pool_path = require_project_rel(state.get('scene_pool'), 'scene_pool')
     for idx, sheet in enumerate(state.get('capture_sheets') or []):
         require_project_rel(sheet, f'capture_sheet[{idx}]')
+    for idx, report in enumerate(state.get('supplemental_qa_reports') or []):
+        require_project_rel(report, f'supplemental_qa_report[{idx}]')
 
     patch_manifest: dict[str, Any] = {}
     if patch_manifest_path and patch_manifest_path.exists():
@@ -122,6 +124,8 @@ def validate_existing_scene_state(paths: Any, scene_id: str) -> tuple[int, list[
                 errors.append('patch_manifest qa_report does not match current_state latest_qa_report')
             if guard_report and patch_manifest.get('guard_report') != state.get('latest_guard_report'):
                 errors.append('patch_manifest guard_report does not match current_state latest_guard_report')
+            if (patch_manifest.get('supplemental_qa_reports') or []) != (state.get('supplemental_qa_reports') or []):
+                errors.append('patch_manifest supplemental_qa_reports does not match current_state')
 
     pool: dict[str, Any] = {}
     if scene_pool_path and scene_pool_path.exists():
@@ -157,6 +161,7 @@ def validate_existing_scene_state(paths: Any, scene_id: str) -> tuple[int, list[
         'permanent_asset_changes': bool(state.get('permanent_asset_changes')),
         'qa_report': state.get('latest_qa_report'),
         'guard_report': state.get('latest_guard_report'),
+        'supplemental_qa_reports': state.get('supplemental_qa_reports') or [],
         'patch_manifest': state.get('patch_manifest'),
         'scene_pool': state.get('scene_pool'),
         'candidate_count': len(pool.get('candidates') or []) if pool else None,
@@ -222,13 +227,23 @@ def write_markdown_summary(path: Path, state: dict[str, Any]) -> None:
         f"- patch_manifest: `{state.get('patch_manifest') or ''}`",
         f"- scene_pool: `{state.get('scene_pool') or ''}`",
         '',
-        '## Known Blockers',
+        '## Supplemental QA Reports',
     ]
+    supplemental = state.get('supplemental_qa_reports') or []
+    if supplemental:
+        lines.extend(f'- `{item}`' for item in supplemental)
+    else:
+        lines.append('- none recorded')
+    lines.extend([
+        '',
+        '## Known Blockers',
+    ])
     blockers = state.get('known_blockers') or []
     if blockers:
         lines.extend(f'- {item}' for item in blockers)
     else:
         lines.append('- none recorded')
+
     lines.extend(['', '## Next Recommended Patch'])
     next_steps = state.get('next_recommended_patch') or []
     if next_steps:
@@ -253,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--qa-report', default='')
     parser.add_argument('--guard-report', default='')
     parser.add_argument('--capture-sheet', action='append', default=[])
+    parser.add_argument('--supplemental-qa-report', action='append', default=[])
     parser.add_argument('--known-blocker', action='append', default=[])
     parser.add_argument('--next-step', action='append', default=[])
     parser.add_argument('--candidate', action='append', default=[], help='Scene-local preview candidate: candidate_id|asset_type|project/path|purpose')
@@ -292,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         changed_files = [resolve_project_rel(paths.project_root, raw, 'changed file') for raw in split_values(args.changed_file)]
         capture_sheets = [resolve_project_rel(paths.project_root, raw, 'capture sheet') for raw in split_values(args.capture_sheet)]
+        supplemental_qa_reports = [resolve_project_rel(paths.project_root, raw, 'supplemental qa report') for raw in split_values(args.supplemental_qa_report)]
         qa_report = resolve_project_rel(paths.project_root, args.qa_report, 'qa report')
         guard_report = resolve_project_rel(paths.project_root, args.guard_report, 'guard report')
         pool = update_scene_pool(pool_path, paths.project_root, args.scene_id, split_values(args.candidate))
@@ -312,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         'qa_report': qa_report,
         'guard_report': guard_report,
         'capture_sheets': capture_sheets,
+        'supplemental_qa_reports': supplemental_qa_reports,
         'known_blockers': split_values(args.known_blocker),
         'next_recommended_patch': split_values(args.next_step),
         'scene_pool': pool_path.relative_to(paths.project_root).as_posix(),
@@ -331,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         'latest_qa_report': qa_report,
         'latest_guard_report': guard_report,
         'capture_sheets': capture_sheets,
+        'supplemental_qa_reports': supplemental_qa_reports,
         'known_blockers': split_values(args.known_blocker),
         'next_recommended_patch': split_values(args.next_step),
         'patch_manifest': patch_manifest_path.relative_to(paths.project_root).as_posix(),
