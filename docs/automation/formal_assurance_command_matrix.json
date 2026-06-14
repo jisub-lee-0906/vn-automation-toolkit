@@ -120,6 +120,35 @@
       "tests/test_cross_game_portability_hardening.py::test_capture_scene_refuses_runtime_when_dependencies_missing_even_with_fake_renpy"
     ]
   },
+  "scene-guard": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Before/after scripts and guard output are project-confined; start/end labels and required labels/jumps/vars/menu choices are safe identifiers or explicit values used only for deterministic RenPy slice inspection.",
+    "evidence": [
+      "tests/test_scene_patch_guard.py::test_scene_patch_guard_passes_required_invariants",
+      "tests/test_scene_patch_guard.py::test_scene_patch_guard_fails_missing_required_var"
+    ]
+  },
+  "scene-state": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Writes state/patch/pool under docs/automation/scene_remaster; changed files, QA/guard reports, capture sheets, and candidate paths are project-confined. --check-existing validates existing state links and preview-only safety flags without writing.",
+    "evidence": [
+      "tests/test_scene_remaster_state.py::test_scene_remaster_state_writes_state_patch_and_pool",
+      "tests/test_scene_remaster_state.py::test_scene_remaster_state_check_existing_passes_without_writing",
+      "tests/test_scene_remaster_state.py::test_scene_remaster_state_check_existing_fails_unsafe_pool"
+    ]
+  },
+  "stack-doctor": {
+    "class": "non_project",
+    "project_selection": "not project-scoped; operator supplies or defaults explicit shared infrastructure roots/endpoints",
+    "path_policy": "Read-only readiness check for Hermes CLI, ComfyUI endpoints, Obsidian roots, and optional workflow/output roots. Optional JSON report is operator-selected and should be written to an explicit diagnostics location.",
+    "evidence": [
+      "tests/test_automation_stack_doctor.py::test_stack_doctor_checks_obsidian_root_without_external_services",
+      "tests/test_automation_stack_doctor.py::test_stack_doctor_fails_when_required_obsidian_root_missing",
+      "tests/test_automation_stack_doctor.py::test_stack_doctor_validates_optional_roots"
+    ]
+  },
   "audit": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",

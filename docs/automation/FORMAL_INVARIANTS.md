@@ -168,6 +168,9 @@ Command coverage summary:
 - `preflight` — project command that verifies contract, sidecars, workflow index, and Obsidian scope.
 - `validate-scene` — project command with capture-plan and validation output confinement.
 - `capture-scene` — project command with capture-plan and screenshot output confinement.
+- `scene-guard` — project command with confined before/after script inputs and guard report output for deterministic patch invariant checks.
+- `scene-state` — project command with confined scene remaster state/patch/pool outputs and a read-only `--check-existing` validation mode for current state links and preview-only safety flags.
+- `stack-doctor` — non-project read-only readiness command for the shared Hermes + ComfyUI + Obsidian automation stack; it checks explicitly supplied/default shared infrastructure roots and endpoints.
 - `audit` — project command with confined audit JSON output.
 - `obsidian-audit` — project command with confined Obsidian active-state audit JSON output; verifies title-scoped dashboard/current_state semantic freshness, scene-label drift, writeback coverage, and optional readable-index coverage.
 - `obsidian-summarize` — project command that generates title-scoped reader-facing Obsidian timeline/seed/emotional-arc indexes and a confined JSON summary.

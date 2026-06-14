@@ -24,10 +24,14 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'preflight': ('preflight_vn_project.py', 'Run fail-closed cross-game project readiness checks.'),
     'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
     'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
+    'scene-guard': ('scene_patch_guard.py', 'Compare before/after RenPy scene slices and enforce deterministic patch invariants.'),
+    'scene-state': ('scene_remaster_state.py', 'Write scene-local remaster state, patch manifest, and preview-only candidate pool files.'),
+    'stack-doctor': ('automation_stack_doctor.py', 'Check the generic Hermes + ComfyUI + Obsidian automation stack.'),
     'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),
     'obsidian-audit': ('audit_obsidian_active_state.py', 'Audit Obsidian active-state/dashboard/current-state semantic consistency.'),
     'obsidian-summarize': ('summarize_obsidian_readability_indexes.py', 'Generate reader-facing Obsidian timeline/seed/emotional-arc indexes.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
+
 }
 
 

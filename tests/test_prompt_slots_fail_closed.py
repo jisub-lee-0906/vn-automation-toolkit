@@ -333,3 +333,55 @@ def test_scene_event_cg_refuses_missing_source_char_base_metadata(tmp_path: Path
 
     assert proc.returncode == 1
     assert 'SCENE_EVENT_CG_SOURCE_REQUIRED' in proc.stdout + proc.stderr
+
+
+def test_scene_event_cg_prepare_only_records_source_metadata_and_seed(tmp_path: Path):
+    event_script = ROOT / 'tools/run_scene_event_cg_smoke.py'
+    project, workflow_pack = make_project(tmp_path, sqlite_only=True)
+    write_json(workflow_pack / 'scene_event_cg/scene_event_cg_workflow_api.json', {
+        '9': {'inputs': {'text': 'old positive'}},
+        '10': {'inputs': {'text': 'old negative'}},
+        '11': {'inputs': {'width': 0, 'height': 0}},
+        '12': {'inputs': {'seed': 0, 'steps': 0, 'cfg': 0, 'denoise': 0}},
+        '14': {'inputs': {'filename_prefix': 'old'}},
+        '100': {'inputs': {'lora_name': '', 'strength_model': 0, 'strength_clip': 0}},
+    })
+    slots = project / 'docs/production/prompt_slots/event_test.json'
+    write_json(slots, {
+        'workflow_id': 'scene_event_cg',
+        'asset_id': 'event_test',
+        'prompt_slots': {
+            'character_features': ['medium_hair', 'brown_hair'],
+            'outfit_detail': ['white_shirt', 'blue_skirt'],
+            'scene_context': ['indoors', 'dawn'],
+        },
+    })
+    char_meta = project / 'docs/automation/generation_runs/char_base_fixture/metadata.json'
+    write_json(char_meta, {'run_id': 'char_base_fixture', 'seed': 1234, 'scene_event_cg_seed_to_reuse': 5678})
+    meta = project / 'docs/automation/generation_runs/event_prepare/metadata.json'
+
+    proc = subprocess.run([
+        sys.executable, str(event_script),
+        '--project-root', str(project),
+        '--asset-id', 'event_test',
+        '--prompt-slots', str(slots),
+        '--char-base-metadata', str(char_meta),
+        '--prepare-only',
+        '--out-metadata', str(meta),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(meta.read_text(encoding='utf-8'))
+    assert data['prepare_only'] is True
+    assert data['source_char_base_metadata'] == str(char_meta.resolve())
+    assert data['source_char_base_run_id'] == 'char_base_fixture'
+    assert data['seed'] == 5678
+    assert data['same_seed_as_char_base'] is False
+    assert data['taxonomy_source'] == 'db'
+    assert data['taxonomy_placeholder_tags'] == ['medium_hair', 'brown_hair', 'white_shirt', 'blue_skirt', 'indoors', 'dawn']
+    assert data['negative_prompt_policy'] == 'route_policy_runtime_copy'
+    assert data['route_mode'] == 'conservative'
+    assert data['route_allowed_negative_removals'] == []
+    patched = json.loads(Path(data['patched_workflow_path']).read_text(encoding='utf-8'))
+    assert 'medium_hair' in patched['9']['inputs']['text']
+    assert patched['12']['inputs']['seed'] == 5678

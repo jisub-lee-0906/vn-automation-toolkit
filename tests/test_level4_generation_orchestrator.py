@@ -126,13 +126,14 @@ def test_generation_orchestrator_passes_scene_event_source_char_base_metadata(tm
             'status': 'needs_generation',
             'recommended_workflow_id': 'scene_event_cg',
             'source_char_base_metadata': str(char_meta),
+            'scene_event_route_mode': 'production_character',
         }],
     })
     fake_runner = tmp_path / 'fake_event_runner.py'
     fake_runner.write_text(
         "import argparse, json\n"
         "from pathlib import Path\n"
-        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--prompt-slots'); parser.add_argument('--char-base-metadata')\n"
+        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--prompt-slots'); parser.add_argument('--char-base-metadata'); parser.add_argument('--route-mode')\n"
         "args=parser.parse_args()\n"
         "assert args.char_base_metadata and args.char_base_metadata.endswith('metadata.json'), args.char_base_metadata\n"
         "root=Path(args.project_root); run_dir=root/'docs/automation/generation_runs/fake_event_run'; run_dir.mkdir(parents=True, exist_ok=True)\n"
@@ -156,6 +157,113 @@ def test_generation_orchestrator_passes_scene_event_source_char_base_metadata(tm
     assert event_result['status'] == 'generated'
     assert '--char-base-metadata' in event_result['command']
     assert str(char_meta) in event_result['command']
+    assert '--route-mode' in event_result['command']
+    assert 'production_character' in event_result['command']
+
+
+def test_generation_orchestrator_passes_char_alpha_source_metadata(tmp_path: Path):
+    project = make_project(tmp_path)
+    source_meta = project / 'docs/automation/generation_runs/source_char/metadata.json'
+    write_json(source_meta, {'run_id': 'source_char', 'candidate_copies': ['source.png']})
+    write_json(project / 'docs/production/asset_requests/scene.resolved_asset_requests.json', {
+        'scene_id': 'scene',
+        'resolved_asset_requests': [{
+            'asset_id': 'alpha_sprite_test',
+            'asset_type': 'transparent_sprite',
+            'description': 'alpha sprite test',
+            'decision': 'generate',
+            'status': 'needs_generation',
+            'recommended_workflow_id': 'char_alpha',
+            'source_char_base_metadata': str(source_meta),
+        }],
+    })
+    fake_runner = tmp_path / 'fake_alpha_runner.py'
+    fake_runner.write_text(
+        "import argparse, json\n"
+        "from pathlib import Path\n"
+        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--source-metadata')\n"
+        "args=parser.parse_args()\n"
+        "assert args.source_metadata and args.source_metadata.endswith('metadata.json'), args.source_metadata\n"
+        "root=Path(args.project_root); run_dir=root/'docs/automation/generation_runs/fake_alpha_run'; run_dir.mkdir(parents=True, exist_ok=True)\n"
+        "meta={'run_id':'fake_alpha_run','asset_type':'transparent_sprite','workflow_id':'char_alpha','asset_id':args.asset_id,'candidate_copies':[],'source_metadata':args.source_metadata,'promotion_status':'not_promoted','qa_status':'pending_visual_review'}\n"
+        "meta_path=run_dir/'metadata.json'; meta_path.write_text(json.dumps(meta, indent=2)+'\\n', encoding='utf-8')\n"
+        "print('RUN_ID fake_alpha_run'); print('METADATA', meta_path)\n",
+        encoding='utf-8',
+    )
+    out = project / 'docs/automation/generation_batch.json'
+    proc = subprocess.run([
+        sys.executable, str(ORCH_SCRIPT),
+        '--project-root', str(project),
+        '--resolved-glob', 'docs/production/asset_requests/*.resolved_asset_requests.json',
+        '--runner', f'char_alpha={sys.executable} {fake_runner}',
+        '--out', str(out),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(out.read_text(encoding='utf-8'))
+    alpha_result = next(r for r in data['results'] if r['asset_id'] == 'alpha_sprite_test')
+    assert alpha_result['status'] == 'generated'
+    assert '--source-metadata' in alpha_result['command']
+    assert str(source_meta) in alpha_result['command']
+
+
+def test_generation_orchestrator_passes_char_expression_prompt_slots_and_source_metadata(tmp_path: Path):
+    project = make_project(tmp_path)
+    source_meta = project / 'docs/automation/generation_runs/source_char/metadata.json'
+    write_json(source_meta, {'run_id': 'source_char', 'candidate_copies': ['source.png']})
+    slots = project / 'docs/production/prompt_slots/expr_happy_test.json'
+    write_json(slots, {
+        'workflow_id': 'char_expression',
+        'asset_id': 'expr_happy_test',
+        'prompt_slots': {
+            'identity_tags': ['medium_hair'],
+            'expression_positive': ['happy'],
+            'expression_negative': ['sad'],
+        },
+    })
+    write_json(project / 'docs/production/asset_requests/scene.resolved_asset_requests.json', {
+        'scene_id': 'scene',
+        'resolved_asset_requests': [{
+            'asset_id': 'expr_happy_test',
+            'asset_type': 'character_expression',
+            'description': 'happy expression test',
+            'decision': 'generate',
+            'status': 'needs_generation',
+            'recommended_workflow_id': 'char_expression',
+            'source_char_base_metadata': str(source_meta),
+        }],
+    })
+    fake_runner = tmp_path / 'fake_expression_runner.py'
+    fake_runner.write_text(
+        "import argparse, json\n"
+        "from pathlib import Path\n"
+        "parser=argparse.ArgumentParser(); parser.add_argument('--project-root'); parser.add_argument('--asset-id'); parser.add_argument('--description'); parser.add_argument('--scene-id'); parser.add_argument('--prompt-slots'); parser.add_argument('--source-metadata')\n"
+        "args=parser.parse_args()\n"
+        "assert args.prompt_slots and args.prompt_slots.endswith('expr_happy_test.json'), args.prompt_slots\n"
+        "assert args.source_metadata and args.source_metadata.endswith('metadata.json'), args.source_metadata\n"
+        "root=Path(args.project_root); run_dir=root/'docs/automation/generation_runs/fake_expression_run'; run_dir.mkdir(parents=True, exist_ok=True)\n"
+        "meta={'run_id':'fake_expression_run','asset_type':'character_expression','workflow_id':'char_expression','asset_id':args.asset_id,'candidate_copies':[],'prompt_slots_path':args.prompt_slots,'source_metadata':args.source_metadata,'promotion_status':'not_promoted','qa_status':'pending_visual_review'}\n"
+        "meta_path=run_dir/'metadata.json'; meta_path.write_text(json.dumps(meta, indent=2)+'\\n', encoding='utf-8')\n"
+        "print('RUN_ID fake_expression_run'); print('METADATA', meta_path)\n",
+        encoding='utf-8',
+    )
+    out = project / 'docs/automation/generation_batch.json'
+    proc = subprocess.run([
+        sys.executable, str(ORCH_SCRIPT),
+        '--project-root', str(project),
+        '--resolved-glob', 'docs/production/asset_requests/*.resolved_asset_requests.json',
+        '--runner', f'char_expression={sys.executable} {fake_runner}',
+        '--out', str(out),
+    ], cwd=ROOT, text=True, capture_output=True)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(out.read_text(encoding='utf-8'))
+    result = next(r for r in data['results'] if r['asset_id'] == 'expr_happy_test')
+    assert result['status'] == 'generated'
+    assert '--prompt-slots' in result['command']
+    assert str(slots) in result['command']
+    assert '--source-metadata' in result['command']
+    assert str(source_meta) in result['command']
 
 
 def test_audio_bgm_with_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_path: Path):
