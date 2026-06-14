@@ -109,6 +109,16 @@ def test_obsidian_audit_passes_when_active_notes_are_consistent(tmp_path: Path):
     assert data['active_current_state'].endswith('current_state_20260610.md')
 
 
+def test_obsidian_audit_accepts_json_out_alias(tmp_path: Path):
+    project = make_obsidian_project(tmp_path)
+    out = project / 'docs/validation/obsidian_alias/report.json'
+    proc = run_cli('obsidian-audit', '--project-root', str(project), '--json-out', str(out))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert out.exists()
+    data = json.loads(out.read_text(encoding='utf-8'))
+    assert data['status'] == 'PASS'
+
+
 def test_obsidian_audit_fails_on_stale_dashboard_current_state_link(tmp_path: Path):
     project = make_obsidian_project(tmp_path, stale_dashboard=True)
     proc = run_cli('obsidian-audit', '--project-root', str(project))

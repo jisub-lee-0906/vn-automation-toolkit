@@ -349,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Audit Obsidian active-state semantic consistency for a VN title.')
     parser.add_argument('--project-root', default=None)
     parser.add_argument('--contract')
-    parser.add_argument('--out', default='docs/automation/obsidian_active_state_audit.json')
+    parser.add_argument('--out', '--json-out', dest='out', default='docs/automation/obsidian_active_state_audit.json', help='Project-confined JSON report path. --json-out is kept as a compatibility alias used by other report commands.')
     parser.add_argument('--update-dashboard-active-block', action='store_true', help='Insert/update a machine-managed active-state block in Automation/dashboard.md.')
     parser.add_argument('--latest-report', default=None, help='Optional latest QA/report path to write into the dashboard active block.')
     parser.add_argument('--writeback-manifest', default=None, help='Optional writeback manifest JSON to validate.')
