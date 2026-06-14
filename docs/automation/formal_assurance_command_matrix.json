@@ -105,7 +105,7 @@
   "validate-scene": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",
-    "path_policy": "Capture plan and output dir are project-confined; scene/capture names, legacy file:line warps, label-based warps, waits, offsets, and runtime phases are bounded.",
+    "path_policy": "Capture plan and output dir are project-confined; scene/capture names, legacy file:line warps, label-based warps, waits, offsets, bounded pre-capture menu actions, expected menu-choice checks, and runtime phases are bounded.",
     "evidence": [
       "tests/test_cross_game_portability_hardening.py::test_validate_scene_rejects_output_dir_outside_project",
       "tests/test_formal_assurance_invariants.py::test_project_path_helpers_are_deterministically_fuzzed"
@@ -114,7 +114,7 @@
   "capture-scene": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",
-    "path_policy": "Capture plan and screenshot outputs are project-confined; legacy file:line and label-based warps resolve through project-confined script files; runtime dependencies fail structured when unavailable.",
+    "path_policy": "Capture plan and screenshot outputs are project-confined; legacy file:line and label-based warps resolve through project-confined script files; pre-capture menu actions are bounded and whitelisted; runtime dependencies fail structured when unavailable.",
     "evidence": [
       "tests/test_cross_game_portability_hardening.py::test_capture_scene_dry_run_uses_generic_capture_plan",
       "tests/test_cross_game_portability_hardening.py::test_capture_scene_refuses_runtime_when_dependencies_missing_even_with_fake_renpy"

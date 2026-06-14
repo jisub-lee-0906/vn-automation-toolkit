@@ -107,7 +107,8 @@ If a capture plan is accepted by `validate-scene` or `capture-scene`, then:
 - capture count is bounded;
 - every warp target is a `.rpy` file under the selected project root;
 - warp line numbers are positive integers and within the target file bounds;
-- wait durations are bounded;
+- wait durations and pre-capture menu actions are bounded;
+- optional expected menu choices are checked against the live script at the target warp;
 - screenshot/contact-sheet outputs remain under the selected project root;
 - runtime timeout produces structured failure, not an unbounded hang or traceback dump.
 

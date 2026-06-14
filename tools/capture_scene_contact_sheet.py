@@ -15,7 +15,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from vn_product_config import build_project_paths, require_under  # noqa: E402
-from validate_scene import SAFE_SCENE_ID_RE, resolve_capture_warp, validate_capture_plan  # noqa: E402
+from validate_scene import SAFE_SCENE_ID_RE, ALLOWED_CAPTURE_KEYS, resolve_capture_warp, validate_capture_plan  # noqa: E402
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -61,6 +61,9 @@ def capture_window(pid: int, out_path: Path) -> None:
     hwnd, rect, _title = info
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        width = max(1, rect[2] - rect[0])
+        height = max(1, rect[3] - rect[1])
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, rect[0], rect[1], width, height, win32con.SWP_SHOWWINDOW)
         win32gui.SetForegroundWindow(hwnd)
     except Exception:
         pass
@@ -68,6 +71,106 @@ def capture_window(pid: int, out_path: Path) -> None:
     img = ImageGrab.grab(bbox=rect)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
+
+
+KEY_VK = {
+    'enter': 0x0D,
+    'space': 0x20,
+    'escape': 0x1B,
+    'up': 0x26,
+    'down': 0x28,
+    'left': 0x25,
+    'right': 0x27,
+}
+
+
+def focus_window_for_pid(pid: int):
+    import win32con  # type: ignore
+    import win32gui  # type: ignore
+
+    deadline = time.time() + 10
+    info = None
+    while time.time() < deadline:
+        info = find_window_for_pid(pid)
+        if info:
+            break
+        time.sleep(0.25)
+    if not info:
+        raise RuntimeError(f'No visible RenPy window found for pid {pid}')
+    hwnd, rect, title = info
+    try:
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        width = max(1, rect[2] - rect[0])
+        height = max(1, rect[3] - rect[1])
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, rect[0], rect[1], width, height, win32con.SWP_SHOWWINDOW)
+        win32gui.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    time.sleep(0.15)
+    return hwnd, rect, title
+
+
+def perform_pre_capture_actions(pid: int, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    import win32api  # type: ignore
+    import win32con  # type: ignore
+    import win32gui  # type: ignore
+
+    performed: list[dict[str, Any]] = []
+    for action in actions:
+        action_type = action.get('type')
+        repeat = int(action.get('repeat', 1))
+        interval = float(action.get('interval_seconds', action.get('post_wait_seconds', 0.15)))
+        if action_type == 'wait':
+            seconds = float(action.get('seconds', action.get('post_wait_seconds', 0.0)))
+            time.sleep(seconds)
+            performed.append({'type': 'wait', 'seconds': seconds})
+            continue
+        hwnd, rect, _title = focus_window_for_pid(pid)
+        if action_type == 'key':
+            key = str(action.get('key'))
+            if key not in ALLOWED_CAPTURE_KEYS or key not in KEY_VK:
+                raise RuntimeError(f'unsupported pre_capture key: {key}')
+            vk = KEY_VK[key]
+            for _ in range(repeat):
+                win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, vk, 0)
+                time.sleep(0.03)
+                win32gui.PostMessage(hwnd, win32con.WM_KEYUP, vk, 0)
+                # Also send a global key event as a fallback when the window manager
+                # did grant foreground focus. The targeted PostMessage is the primary
+                # path and avoids depending on focus for menu proof captures.
+                try:
+                    win32api.keybd_event(vk, 0, 0, 0)
+                    time.sleep(0.01)
+                    win32api.keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
+                except Exception:
+                    pass
+                time.sleep(interval)
+            performed.append({'type': 'key', 'key': key, 'repeat': repeat, 'interval_seconds': interval})
+        elif action_type == 'click':
+            x_frac = float(action.get('x'))
+            y_frac = float(action.get('y'))
+            x = int(rect[0] + (rect[2] - rect[0]) * x_frac)
+            y = int(rect[1] + (rect[3] - rect[1]) * y_frac)
+            for _ in range(repeat):
+                rel_x = int((rect[2] - rect[0]) * x_frac)
+                rel_y = int((rect[3] - rect[1]) * y_frac)
+                lparam = (rel_y << 16) | rel_x
+                win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam)
+                time.sleep(0.03)
+                win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+                try:
+                    win32api.SetCursorPos((x, y))
+                    time.sleep(0.01)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                    time.sleep(0.01)
+                    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                except Exception:
+                    pass
+                time.sleep(interval)
+            performed.append({'type': 'click', 'x': x_frac, 'y': y_frac, 'repeat': repeat, 'interval_seconds': interval})
+        else:
+            raise RuntimeError(f'unsupported pre_capture action type: {action_type}')
+    return performed
 
 
 def analyze_screenshot_quality(path: Path, *, allow_blank: bool = False) -> dict[str, Any]:
@@ -186,7 +289,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print('dry_run true')
         for cap in captures:
-            print('capture', cap.get('name'), resolve_capture_warp(cap, paths.project_root))
+            actions = cap.get('pre_capture_actions') or []
+            suffix = f" actions={len(actions)}" if actions else ''
+            print('capture', cap.get('name'), resolve_capture_warp(cap, paths.project_root), suffix)
         return 0
 
     if sys.platform != 'win32':
@@ -228,9 +333,13 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(wait)
             if time.time() > deadline:
                 raise TimeoutError(f'capture {name} exceeded timeout before screenshot')
+            actions = cap.get('pre_capture_actions') or []
+            performed_actions = perform_pre_capture_actions(proc.pid, actions) if actions else []
+            if time.time() > deadline:
+                raise TimeoutError(f'capture {name} exceeded timeout before screenshot')
             capture_window(proc.pid, out)
             quality = analyze_screenshot_quality(out, allow_blank=bool(cap.get('allow_blank') or args.allow_blank_captures))
-            quality_result = {'name': name, 'path': str(out), 'warp': warp, **quality}
+            quality_result = {'name': name, 'path': str(out), 'warp': warp, 'pre_capture_actions': performed_actions, **quality}
             quality_results.append(quality_result)
             if quality['status'] != 'PASS':
                 qa_path = out_dir / 'capture_quality_failed.json'
