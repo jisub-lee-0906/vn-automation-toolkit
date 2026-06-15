@@ -97,8 +97,9 @@ def validate_roadmap(data: dict[str, Any], project_root: Path) -> list[str]:
     if not isinstance(current_focus, dict):
         errors.append('current_focus must be object')
     else:
-        if current_focus.get('scene_id') != 'scene_001_red_system_contract':
-            errors.append('current_focus.scene_id must be scene_001_red_system_contract for this active roadmap')
+        scene_id = current_focus.get('scene_id')
+        if not isinstance(scene_id, str) or not scene_id:
+            errors.append('current_focus.scene_id must be a non-empty string')
         for key in ['state_file', 'obsidian_scene_note']:
             value = current_focus.get(key)
             if not isinstance(value, str):

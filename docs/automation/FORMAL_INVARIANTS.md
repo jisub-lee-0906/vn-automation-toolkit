@@ -156,6 +156,7 @@ Every command exposed by `vn_automation.cli.COMMANDS` must be present in this ma
 Command coverage summary:
 
 - `init` — bootstrap command with explicit project root and confined game dir.
+- `new-title` — bootstrap command that creates a title-scoped Ren'Py + Obsidian project for conversation-led Hermes VN automation; refuses ambiguous/non-ASCII slugs without `--slug`, refuses non-empty target roots without `--force`, and runs core validation gates before success.
 - `check` — project command via centralized project path builder.
 - `gaps` — project command with confined report output.
 - `validate` — project command via centralized project path builder.

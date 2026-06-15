@@ -11,6 +11,7 @@ TOOLS = ROOT / 'tools'
 
 COMMANDS: dict[str, tuple[str, str]] = {
     'init': ('init_vn_automation_project.py', 'Bootstrap VN automation docs/config for a RenPy project.'),
+    'new-title': ('bootstrap_new_vn_title.py', 'Create a title-scoped RenPy + Obsidian VN project for conversation-led Hermes automation.'),
     'check': ('check_renpy_asset_refs.py', 'Check literal RenPy image/audio refs under game/ exist.'),
     'gaps': ('report_renpy_integration_gaps.py', 'Report manifest-to-RenPy integration gaps.'),
     'validate': ('validate_vn_automation_docs.py', 'Validate automation docs, schemas, workflow index, and manifest.'),

@@ -8,6 +8,17 @@
       "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
     ]
   },
+  "new-title": {
+    "class": "bootstrap",
+    "project_selection": "explicit --renpy-projects-root + title/slug create a project root; no cwd fallback",
+    "path_policy": "Creates a title-scoped project under --renpy-projects-root and Obsidian root under --obsidian-vault/<slug>/VN; refuses non-empty roots without --force; runs project-confined validate/roadmap/scene-state/obsidian-audit before success.",
+    "evidence": [
+      "tests/test_new_title_bootstrap.py::test_new_title_refuses_non_ascii_title_without_slug",
+      "tests/test_new_title_bootstrap.py::test_new_title_dry_run_plans_no_writes",
+      "tests/test_new_title_bootstrap.py::test_new_title_bootstraps_valid_title_scoped_project_without_lint",
+      "tests/test_new_title_bootstrap.py::test_new_title_refuses_existing_project_without_force"
+    ]
+  },
   "check": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",
