@@ -101,8 +101,21 @@ After `NEW_TITLE_BOOTSTRAP_COMPLETE`, Hermes should:
 1. Report created paths and validation output.
 2. Ask the owner only for the next Scene 001 creative direction.
 3. Implement one minimal vertical polish patch.
-4. Run scene guard, lint, capture/validate scene QA, scene-state check, and Obsidian audit.
-5. Continue scene-by-scene.
+4. Back up the pre-patch script slice, then run the post-patch harness:
+
+```bash
+python -m vn_automation.cli polish-scene \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --patch-id <safe_patch_id> \
+  --before docs/validation/<safe_patch_id>/script_before.rpy \
+  --start-label scene_001_opening \
+  --changed-file game/script.rpy
+```
+
+`polish-scene` runs deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, writes `scene_polish_qa_report.md/json`, writes `scene-state`, and immediately verifies it with `scene-state --check-existing` while preserving `scene_local_preview_only` and `permanent_asset_changes=false`.
+5. Add screenshot/contact-sheet capture when the patch changes visible gameplay or when owner review needs visual evidence.
+6. Continue scene-by-scene.
 
 ## Verification Snapshot
 

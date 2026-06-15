@@ -113,6 +113,15 @@
       "tests/test_cross_game_portability_hardening.py::test_preflight_rejects_workflow_index_outside_workflow_pack"
     ]
   },
+  "polish-scene": {
+    "class": "project",
+    "project_selection": "explicit --project-root/--contract via centralized project path builder",
+    "path_policy": "Requires before/after script paths under project root, writes guard and QA report under docs/validation/<patch_id>, runs scene-guard/validate/obsidian-audit/RenPy lint, then scene-state writeback and scene-state --check-existing with scene_local_preview_only and permanent_asset_changes=false.",
+    "evidence": [
+      "tests/test_polish_scene_harness.py::test_polish_scene_runs_guard_state_and_validation_without_assets",
+      "tests/test_polish_scene_harness.py::test_polish_scene_fails_closed_when_required_choice_missing"
+    ]
+  },
   "validate-scene": {
     "class": "project",
     "project_selection": "build_project_paths fail-closed selection",

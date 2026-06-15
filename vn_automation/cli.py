@@ -23,6 +23,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'promote': ('promote_asset_candidate.py', 'Promote an approved candidate into RenPy assets and manifest.'),
     'verify': ('verify_vn_automation_runtime.py', 'Run product/runtime verification gates.'),
     'preflight': ('preflight_vn_project.py', 'Run fail-closed cross-game project readiness checks.'),
+    'polish-scene': ('polish_scene_harness.py', 'Run the safe post-patch scene vertical-polish guard/QA/state harness.'),
     'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
     'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
     'scene-guard': ('scene_patch_guard.py', 'Compare before/after RenPy scene slices and enforce deterministic patch invariants.'),
