@@ -31,6 +31,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'obsidian-audit': ('audit_obsidian_active_state.py', 'Audit Obsidian active-state/dashboard/current-state semantic consistency.'),
     'obsidian-summarize': ('summarize_obsidian_readability_indexes.py', 'Generate reader-facing Obsidian timeline/seed/emotional-arc indexes.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
+    'roadmap': ('validate_production_cockpit_roadmap.py', 'Validate the human-supervised VN production cockpit roadmap.'),
 
 }
 

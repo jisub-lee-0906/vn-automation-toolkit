@@ -21,7 +21,7 @@ def test_vn_auto_cli_help_lists_product_commands():
     proc = run_cli('--help')
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert 'vn-auto' in proc.stdout
-    for command in ['init', 'check', 'gaps', 'validate', 'sync', 'resolve', 'queue', 'generate', 'promote', 'verify', 'scene-guard', 'scene-state', 'stack-doctor', 'obsidian-audit', 'obsidian-summarize']:
+    for command in ['init', 'check', 'gaps', 'validate', 'sync', 'resolve', 'queue', 'generate', 'promote', 'verify', 'scene-guard', 'scene-state', 'stack-doctor', 'obsidian-audit', 'obsidian-summarize', 'roadmap']:
         assert command in proc.stdout
 
 

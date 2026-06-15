@@ -183,5 +183,15 @@
     "evidence": [
       "tests/test_obsidian_readability_indexes.py::test_obsidian_summarize_writes_readable_index_notes"
     ]
+  },
+  "roadmap": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Validates a project-confined production cockpit roadmap JSON; evidence paths must stay under the selected project and exist, outputs stay project-confined, and active Obsidian note links are checked as explicit external title-root references.",
+    "evidence": [
+      "tests/test_production_cockpit_roadmap.py::test_production_cockpit_roadmap_passes_valid_project",
+      "tests/test_production_cockpit_roadmap.py::test_production_cockpit_roadmap_requires_explicit_non_goals",
+      "tests/test_production_cockpit_roadmap.py::test_production_cockpit_roadmap_refuses_outside_project_roadmap"
+    ]
   }
 }

@@ -176,6 +176,7 @@ Command coverage summary:
 - `obsidian-audit` — project command with confined Obsidian active-state audit JSON output; verifies title-scoped dashboard/current_state semantic freshness, scene-label drift, writeback coverage, and optional readable-index coverage.
 - `obsidian-summarize` — project command that generates title-scoped reader-facing Obsidian timeline/seed/emotional-arc indexes and a confined JSON summary.
 - `director` — project command with explicit project root; Hermes media cache is intentional external delivery cache. Director is intentionally documented as a UX/orchestration command with targeted `require_under` checks rather than the uniform central `build_project_paths()` pattern used by most project commands.
+- `roadmap` — project command that validates a project-confined human-supervised production cockpit roadmap, including explicit anti-auto-promote/non-global-replacement goals and existing evidence links.
 
 ## Out of Scope
 
