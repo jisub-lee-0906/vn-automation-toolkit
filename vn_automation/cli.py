@@ -27,6 +27,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
     'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
     'scene-guard': ('scene_patch_guard.py', 'Compare before/after RenPy scene slices and enforce deterministic patch invariants.'),
+    'scene-intent': ('scene_intent_harness.py', 'Normalize an owner scene direction into an intent packet and prepared polish-scene run.'),
     'scene-state': ('scene_remaster_state.py', 'Write scene-local remaster state, patch manifest, and preview-only candidate pool files.'),
     'stack-doctor': ('automation_stack_doctor.py', 'Check the generic Hermes + ComfyUI + Obsidian automation stack.'),
     'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),

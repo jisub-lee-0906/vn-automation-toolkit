@@ -100,8 +100,22 @@ After `NEW_TITLE_BOOTSTRAP_COMPLETE`, Hermes should:
 
 1. Report created paths and validation output.
 2. Ask the owner only for the next Scene 001 creative direction.
-3. Implement one minimal vertical polish patch.
-4. Back up the pre-patch script slice, then run the post-patch harness:
+3. Normalize that response into a project-confined intent packet and prepared validation run:
+
+```bash
+python -m vn_automation.cli scene-intent \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --intent-id <safe_patch_id> \
+  --owner-text "<owner direction>" \
+  --objective "<one-sentence implementation objective>" \
+  --choice "<important choice text>" \
+  --make-capture-plan
+```
+
+`scene-intent` writes `docs/automation/scene_intents/<scene_id>/<intent_id>.json`, a Markdown companion, `docs/validation/<intent_id>/script_before.rpy`, and optionally `docs/validation/<intent_id>/capture_plan.json`. It does **not** modify game scripts or assets; it prepares the safe patch/run context and prints the next `polish-scene` command.
+4. Implement one minimal vertical polish patch.
+5. Back up the pre-patch script slice, then run the post-patch harness:
 
 ```bash
 python -m vn_automation.cli polish-scene \
