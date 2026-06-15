@@ -41,6 +41,16 @@ def make_obsidian_project(tmp_path: Path, *, stale_dashboard: bool = False, stal
         'workflow_index': (tmp_path / 'workflows' / 'WORKFLOW_INDEX.json').as_posix(),
     })
     write_json(project / 'game/data/asset_manifest.json', {'version': '1.0.0', 'assets': []})
+    write_json(project / 'docs/automation/scene_remaster/current_state.json', {
+        'schema_version': 1,
+        'scene_id': 'scene_056_probe',
+        'status': 'true_end_route_verified_polished',
+        'latest_patch_id': 'patch_20260610',
+        'approval_status': 'owner_approved',
+        'asset_policy': 'approved_promotion_only',
+        'permanent_asset_changes': False,
+        'latest_qa_report': 'docs/validation/global_story_polish_20260610/final_report.md',
+    })
     current = obs_root / 'Automation/current_state_20260610.md'
     current.write_text(
         '---\n'
@@ -48,6 +58,7 @@ def make_obsidian_project(tmp_path: Path, *, stale_dashboard: bool = False, stal
         'game_slug: audit_title\n'
         f'status: {"superseded" if stale_active_state else "active"}\n'
         'source_status: true_end_route_verified_polished\n'
+        'latest_patch_id: patch_20260610\n'
         '---\n\n'
         '# Current State — Active Resume 2026-06-10\n\n'
         '## Current Playable State\n\n'
@@ -79,6 +90,7 @@ def make_obsidian_project(tmp_path: Path, *, stale_dashboard: bool = False, stal
         '## Active Resume / Completion Snapshot — 2026-06-10\n\n'
         '- Current status: `true_end_route_verified_polished`.\n'
         f'- Compact active state: {dashboard_current}.\n'
+        '- Latest patch: `patch_20260610`.\n'
         '- Ending arc: [[scene_056_to_068_true_end_arc]].\n'
         f'- Latest QA: `{dashboard_latest}`\n'
         '- Next recommended step: manual click-through playtest or packaging/release refresh.\n',
@@ -135,6 +147,20 @@ def test_obsidian_audit_fails_when_no_active_current_state_exists(tmp_path: Path
     assert proc.returncode == 1
     text = proc.stdout + proc.stderr
     assert 'expected exactly one active automation_state note' in text
+
+
+def test_obsidian_audit_fails_when_active_state_patch_id_disagrees_with_machine_state(tmp_path: Path):
+    project = make_obsidian_project(tmp_path)
+    active = tmp_path / 'obsidian/audit_title/VN/Automation/current_state_20260610.md'
+    active.write_text(
+        active.read_text(encoding='utf-8').replace('latest_patch_id: patch_20260610', 'latest_patch_id: stale_patch'),
+        encoding='utf-8',
+    )
+
+    proc = run_cli('obsidian-audit', '--project-root', str(project))
+    assert proc.returncode == 1
+    text = proc.stdout + proc.stderr
+    assert 'active current_state latest_patch_id stale_patch disagrees with machine current_state latest_patch_id patch_20260610' in text
 
 
 def test_obsidian_audit_updates_machine_managed_dashboard_block(tmp_path: Path):

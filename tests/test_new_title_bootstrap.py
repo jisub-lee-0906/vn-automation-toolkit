@@ -104,8 +104,10 @@ def test_new_title_bootstraps_valid_title_scoped_project_without_lint(tmp_path: 
     assert (project / 'docs/automation/project_contract.json').exists()
     assert (project / 'docs/automation/production_cockpit_roadmap.json').exists()
     assert (project / 'docs/automation/scene_remaster/current_state.json').exists()
+    assert (project / 'docs/automation/writeback_manifest.json').exists()
     assert (obs_root / 'Automation/dashboard.md').exists()
     assert (obs_root / 'Automation/current_state_0001_bootstrap.md').exists()
+    assert (obs_root / 'Automation/reader_entrypoint.md').exists()
     assert (obs_root / 'Scenes/scene_001_opening.md').exists()
     contract = json.loads((project / 'docs/automation/project_contract.json').read_text(encoding='utf-8'))
     assert contract['game_title'] == 'Moonlit Contract'
@@ -121,6 +123,17 @@ def test_new_title_bootstraps_valid_title_scoped_project_without_lint(tmp_path: 
     assert scene_state.returncode == 0, scene_state.stdout + scene_state.stderr
     obsidian = run_cli('obsidian-audit', '--project-root', str(project))
     assert obsidian.returncode == 0, obsidian.stdout + obsidian.stderr
+    writeback = run_cli('obsidian-audit', '--project-root', str(project), '--require-writeback-manifest')
+    assert writeback.returncode == 0, writeback.stdout + writeback.stderr
+
+    dashboard = (obs_root / 'Automation/dashboard.md').read_text(encoding='utf-8')
+    active_state = (obs_root / 'Automation/current_state_0001_bootstrap.md').read_text(encoding='utf-8')
+    reader = (obs_root / 'Automation/reader_entrypoint.md').read_text(encoding='utf-8')
+    assert 'Machine truth' in active_state
+    assert 'docs/automation/scene_remaster/current_state.json' in dashboard
+    assert 'docs/automation/scene_remaster/current_state.json' in reader
+    assert 'Historical Logs' in dashboard
+    assert 'Production log' not in dashboard
 
 
 def test_new_title_refuses_existing_project_without_force(tmp_path: Path) -> None:

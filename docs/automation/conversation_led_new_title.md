@@ -84,6 +84,7 @@ Ren'Py/project side:
 - `docs/automation/scene_remaster/current_state.json`.
 - `docs/automation/scene_remaster/patches/bootstrap_placeholder_baseline.json`.
 - `docs/automation/scene_remaster/scene_pools/scene_001_opening.json`.
+- `docs/automation/writeback_manifest.json` covering the required Obsidian active-cockpit notes.
 - `docs/validation/bootstrap/baseline_report.md`.
 
 Obsidian side:
@@ -91,8 +92,35 @@ Obsidian side:
 - `00_Index.md`.
 - `Automation/dashboard.md`.
 - `Automation/current_state_0001_bootstrap.md`.
+- `Automation/reader_entrypoint.md`.
 - `Scenes/scene_001_opening.md`.
 - starter `Characters/`, `Canon/`, and `Decisions/` notes.
+
+## Obsidian Active-Cockpit Structure
+
+New titles should keep Obsidian deliberately layered instead of letting every run append to the dashboard:
+
+```text
+Machine truth:
+  Ren'Py docs/automation/scene_remaster/current_state.json
+
+Human active cockpit:
+  Automation/dashboard.md                  short pointer page only
+  Automation/current_state_0001_bootstrap.md human-readable active brief
+  Automation/reader_entrypoint.md          cold-start entrypoint
+  Scenes/scene_001_opening.md              scene intent/state/canon
+
+History/archive:
+  Automation/archive/*.md                  long logs, superseded dashboards, old reports
+```
+
+Rules:
+
+- Dashboard stays short. It points to machine state, active current-state note, active scene, latest QA, and next safe unit.
+- Active current-state note mirrors machine state for `source_status` and `latest_patch_id`.
+- `reader_entrypoint.md` is the first page to read after context compaction or a new session.
+- Long production logs are archived, not appended indefinitely to `dashboard.md`.
+- `obsidian-audit --require-writeback-manifest` must pass after bootstrap and after baseline-changing work.
 
 ## Post-Bootstrap Loop
 

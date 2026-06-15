@@ -272,24 +272,38 @@ def write_obsidian(obs_root: Path, title: str, slug: str, project_root: Path, wr
 
 - Game slug: `{slug}`
 - Active dashboard: [[Automation/dashboard]]
+- Cold-start entrypoint: [[Automation/reader_entrypoint]]
 - First scene: [[Scenes/scene_001_opening]]
 ''', written, force=force)
     write_text(obs_root / 'Automation' / 'dashboard.md', f'''---
 type: automation_dashboard
 game_slug: {slug}
 status: active
+updated_at: bootstrap
 ---
 
 <!-- VN_AUTO_ACTIVE_STATE_START -->
 ## Active Resume / Machine Snapshot
 
-- Current status: `bootstrap_baseline_ready`.
+- Current status: `owner_review_pending`.
+- Bootstrap phase: `bootstrap_baseline_ready`.
+- Current mode: `scene_by_scene_vertical_polish`.
+- Active scene: [[scene_001_opening]].
 - Compact active state: [[current_state_0001_bootstrap]].
+- Machine state: `{(project_root / 'docs/automation/scene_remaster/current_state.json').as_posix()}`.
+- Latest patch: `{DEFAULT_PATCH_ID}`.
 - Latest QA: `docs/validation/bootstrap/baseline_report.md`
 - Next recommended step: ask only for core Scene 001 direction, then run the vertical polish loop.
 <!-- VN_AUTO_ACTIVE_STATE_END -->
 
 # Automation Dashboard — {title}
+
+## Read This First
+
+1. Machine truth: `docs/automation/scene_remaster/current_state.json` in the Ren'Py project.
+2. Human active brief: [[current_state_0001_bootstrap]].
+3. Active scene note: [[scene_001_opening]].
+4. Cold-start guide: [[reader_entrypoint]].
 
 ## Paths
 
@@ -300,15 +314,30 @@ status: active
 ## Conversation Policy
 
 Ask the owner only for important creative/approval decisions: title/core direction, irreversible asset promotion, final scene approval, or major rewrite direction. Automate scaffolding, validation, QA reports, state writeback, and reversible placeholder work.
+
+## Historical Logs
+
+No historical production log exists yet. Keep this dashboard short; archive long logs under `Automation/archive/` and keep active truth in machine state plus the compact current-state note.
 ''', written, force=force)
     write_text(obs_root / 'Automation' / 'current_state_0001_bootstrap.md', f'''---
 type: automation_state
 game_slug: {slug}
 status: active
-source_status: bootstrap_baseline_ready
+source_status: owner_review_pending
+bootstrap_phase: bootstrap_baseline_ready
+latest_patch_id: {DEFAULT_PATCH_ID}
+active_scene: {DEFAULT_SCENE_ID}
 ---
 
 # Current State — Bootstrap Baseline
+
+## Single Source of Truth
+
+Machine truth is authoritative for operational status:
+
+`{(project_root / 'docs/automation/scene_remaster/current_state.json').as_posix()}`
+
+This note is the human-readable cockpit summary. If this note disagrees with machine state, update this note/dashboard before continuing.
 
 ## Current Playable State
 
@@ -324,11 +353,60 @@ source_status: bootstrap_baseline_ready
 ## Next Safe Unit
 
 Ask only for core Scene 001 creative direction, then implement a minimal vertical polish patch with real validation.
+
+## Do Not Do Yet
+
+- Do not generate or promote production assets from bootstrap alone.
+- Do not treat placeholder prose as final writing.
+- Do not make global replacements before a scene-local review loop exists.
+''', written, force=force)
+    write_text(obs_root / 'Automation' / 'reader_entrypoint.md', f'''---
+type: readable_index
+game_slug: {slug}
+index_kind: reader_entrypoint
+status: active
+generated_at: bootstrap
+---
+
+# Reader Entrypoint — {slug}
+
+Use this page when opening the vault cold. It points to the active cockpit and avoids turning the dashboard into a long production log.
+
+## Active Production State
+
+1. [[current_state_0001_bootstrap]] — current human cockpit.
+2. [[dashboard]] — short active dashboard.
+3. [[scene_001_opening]] — active Scene 001 note.
+4. Machine state: `{(project_root / 'docs/automation/scene_remaster/current_state.json').as_posix()}`.
+
+## Current Evidence
+
+- QA report: `docs/validation/bootstrap/baseline_report.md`.
+- Patch manifest: `docs/automation/scene_remaster/patches/bootstrap_placeholder_baseline.json`.
+- Scene-local pool: `docs/automation/scene_remaster/scene_pools/scene_001_opening.json`.
+
+## Canon / Decision Starting Points
+
+1. [[core_direction]]
+2. [[protagonist]]
+3. [[decision_0001_title_bootstrap]]
+
+## Rule
+
+If this page disagrees with `docs/automation/scene_remaster/current_state.json`, trust machine state first and update this page/dashboard before continuing.
 ''', written, force=force)
     write_text(scene, f'''---
+type: scene
+game_slug: {slug}
 scene_id: {DEFAULT_SCENE_ID}
 renpy_label: {DEFAULT_SCENE_ID}
 status: placeholder_baseline
+route: common
+chronology: opening
+characters: [protagonist]
+locations: []
+related_assets: []
+open_threads: [core_direction_pending]
 ---
 
 # Scene 001 — Opening
@@ -345,11 +423,35 @@ First playable placeholder for `{title}`. This is not final prose and not produc
 ## Next Creative Decision Needed
 
 Choose only the core opening direction: crisis/hook, protagonist pressure, and first meaningful choice.
+
+## Automation State
+
+- status: `owner_review_pending`
+- latest_patch_id: `{DEFAULT_PATCH_ID}`
+- asset_policy: `scene_local_preview_only`
+- permanent_asset_changes: `false`
+- machine_state: `{(project_root / 'docs/automation/scene_remaster/current_state.json').as_posix()}`
+- latest_qa_report: `docs/validation/bootstrap/baseline_report.md`
 ''', written, force=force)
     write_text(obs_root / 'Characters' / 'protagonist.md', f'# Protagonist — {title}\n\nStatus: draft. Define only after core direction is chosen.\n', written, force=force)
     write_text(obs_root / 'Canon' / 'core_direction.md', f'# Core Direction — {title}\n\nStatus: pending owner direction.\n', written, force=force)
     write_text(obs_root / 'Decisions' / 'decision_0001_title_bootstrap.md', f'# Decision 0001 — Title Bootstrap\n\n- title: `{title}`\n- slug: `{slug}`\n- status: bootstrap created\n', written, force=force)
     return scene
+
+
+def write_writeback_manifest(project_root: Path, written: list[str], *, force: bool) -> None:
+    write_json(project_root / 'docs/automation/writeback_manifest.json', {
+        'schema_version': 1,
+        'purpose': 'Required Obsidian active-cockpit writebacks for a freshly bootstrapped VN title.',
+        'required': [
+            {'category': 'dashboard', 'path': 'Automation/dashboard.md'},
+            {'category': 'active_current_state', 'path': 'Automation/current_state_0001_bootstrap.md'},
+            {'category': 'reader_entrypoint', 'path': 'Automation/reader_entrypoint.md'},
+            {'category': 'active_scene', 'path': 'Scenes/scene_001_opening.md'},
+            {'category': 'core_direction', 'path': 'Canon/core_direction.md'},
+            {'category': 'bootstrap_decision', 'path': 'Decisions/decision_0001_title_bootstrap.md'},
+        ],
+    }, written, force=force)
 
 
 def run_tool(script: str, *args: str) -> tuple[int, str]:
@@ -419,6 +521,7 @@ def bootstrap(args: argparse.Namespace) -> int:
     obs_scene = write_obsidian(obs_root, args.title, slug, project_root, written, force=args.force)
     write_json(project_root / 'docs/automation/production_cockpit_roadmap.json', make_roadmap(args.title, slug, obs_scene), written, force=args.force)
     bootstrap_scene_state(project_root, obs_scene, written, args.force)
+    write_writeback_manifest(project_root, written, force=args.force)
 
     validations: list[tuple[str, int, str]] = []
     for name, script, extra in [
