@@ -153,10 +153,11 @@
   "scene-intent": {
     "class": "project",
     "project_selection": "explicit --project-root/--contract via centralized project path builder",
-    "path_policy": "Requires safe scene_id/intent_id and an existing start label; writes project-confined scene intent JSON/Markdown under docs/automation/scene_intents/<scene_id>/, copies game/script.rpy to docs/validation/<intent_id>/script_before.rpy, optionally writes a project-confined capture_plan.json, and never modifies game scripts or asset directories.",
+    "path_policy": "Requires safe scene_id/intent_id and an existing start label; writes project-confined scene intent JSON/Markdown under docs/automation/scene_intents/<scene_id>/, copies game/script.rpy to docs/validation/<intent_id>/script_before.rpy, optionally writes a project-confined capture_plan.json, can upsert a bounded Automation Intent block into the title-scoped Obsidian scene note with --update-scene-note, and never modifies game scripts or asset directories.",
     "evidence": [
       "tests/test_scene_intent_harness.py::test_scene_intent_prepares_patch_run_without_touching_game_script",
-      "tests/test_scene_intent_harness.py::test_scene_intent_refuses_empty_owner_text_and_no_objective"
+      "tests/test_scene_intent_harness.py::test_scene_intent_refuses_empty_owner_text_and_no_objective",
+      "tests/test_scene_intent_harness.py::test_scene_intent_can_update_obsidian_scene_note_anchor"
     ]
   },
   "scene-state": {

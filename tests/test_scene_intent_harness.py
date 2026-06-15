@@ -113,3 +113,51 @@ def test_scene_intent_refuses_empty_owner_text_and_no_objective(tmp_path: Path) 
     assert proc.returncode == 2
     assert 'SCENE_INTENT_REFUSED' in proc.stdout + proc.stderr
     assert not (project / 'docs/automation/scene_intents/scene_001_opening/empty_intent.json').exists()
+
+
+
+def test_scene_intent_can_update_obsidian_scene_note_anchor(tmp_path: Path) -> None:
+    project = bootstrap_project(tmp_path)
+    contract = json.loads((project / 'docs/automation/project_contract.json').read_text(encoding='utf-8'))
+    scene_note = Path(contract['obsidian_project_root']) / 'Scenes/scene_001_opening.md'
+    original = scene_note.read_text(encoding='utf-8')
+
+    proc = run_cli(
+        'scene-intent',
+        '--project-root', str(project),
+        '--scene-id', 'scene_001_opening',
+        '--intent-id', 'scene001_obsidian_anchor',
+        '--owner-text', '첫 장면은 계약 경고와 선택 압박을 더 선명하게 잡는다.',
+        '--objective', 'Scene 001 vertical polish 전 자동화 intent를 Obsidian에 남긴다.',
+        '--choice', '경고를 읽는다',
+        '--make-capture-plan',
+        '--update-scene-note',
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert 'scene_note' in proc.stdout
+    note = scene_note.read_text(encoding='utf-8')
+    assert original in note
+    assert '<!-- vn-auto:scene-intent:start -->' in note
+    assert '<!-- vn-auto:scene-intent:end -->' in note
+    assert '## Automation Intent' in note
+    assert '- latest_intent: `scene001_obsidian_anchor`' in note
+    assert '- intent_json: `docs/automation/scene_intents/scene_001_opening/scene001_obsidian_anchor.json`' in note
+    assert '- before_script: `docs/validation/scene001_obsidian_anchor/script_before.rpy`' in note
+    assert '- capture_plan: `docs/validation/scene001_obsidian_anchor/capture_plan.json`' in note
+    assert 'Scene 001 vertical polish 전 자동화 intent를 Obsidian에 남긴다.' in note
+
+    proc2 = run_cli(
+        'scene-intent',
+        '--project-root', str(project),
+        '--scene-id', 'scene_001_opening',
+        '--intent-id', 'scene001_obsidian_anchor_second',
+        '--owner-text', '두 번째 intent는 기존 block을 교체한다.',
+        '--objective', 'Automation Intent block이 중복되지 않아야 한다.',
+        '--update-scene-note',
+    )
+    assert proc2.returncode == 0, proc2.stdout + proc2.stderr
+    updated = scene_note.read_text(encoding='utf-8')
+    assert updated.count('<!-- vn-auto:scene-intent:start -->') == 1
+    assert 'scene001_obsidian_anchor_second' in updated
+    assert 'scene001_obsidian_anchor.json' not in updated

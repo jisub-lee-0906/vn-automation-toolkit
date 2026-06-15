@@ -172,7 +172,7 @@ Command coverage summary:
 - `validate-scene` — project command with capture-plan and validation output confinement.
 - `capture-scene` — project command with capture-plan and screenshot output confinement.
 - `scene-guard` — project command with confined before/after script inputs and guard report output for deterministic patch invariant checks.
-- `scene-intent` — project command that normalizes owner scene direction into project-confined intent JSON/Markdown, pre-patch script backup, optional capture plan, and next `polish-scene` command without modifying game scripts/assets.
+- `scene-intent` — project command that normalizes owner scene direction into project-confined intent JSON/Markdown, pre-patch script backup, optional capture plan, optional bounded Obsidian Scene note `Automation Intent` block, and next `polish-scene` command without modifying game scripts/assets.
 - `scene-state` — project command with confined scene remaster state/patch/pool outputs and a read-only `--check-existing` validation mode for current state links and preview-only safety flags.
 - `stack-doctor` — non-project read-only readiness command for the shared Hermes + ComfyUI + Obsidian automation stack; it checks explicitly supplied/default shared infrastructure roots and endpoints.
 - `audit` — project command with confined audit JSON output.

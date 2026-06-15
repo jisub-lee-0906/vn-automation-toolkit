@@ -87,6 +87,74 @@ def extract_first_menu_choices(lines: list[str], label: str) -> tuple[list[str],
     return choices, max(0, menu_line - start)
 
 
+def obsidian_project_root(contract: dict[str, Any]) -> Path | None:
+    raw = contract.get('obsidian_project_root') or contract.get('obsidian_vault')
+    if not raw:
+        return None
+    root = Path(raw).expanduser().resolve()
+    if root.name != 'VN':
+        root = root / 'VN'
+    return root.resolve()
+
+
+def require_under_root(child: Path, parent: Path, label: str) -> None:
+    child_r = child.resolve()
+    parent_r = parent.resolve()
+    if child_r != parent_r and parent_r not in child_r.parents:
+        raise ValueError(f'Unsafe {label} outside {parent}: {child}')
+
+
+def scene_note_path(contract: dict[str, Any], scene_id: str) -> Path:
+    root = obsidian_project_root(contract)
+    if root is None:
+        raise ValueError('missing obsidian_project_root in project contract')
+    path = (root / 'Scenes' / f'{scene_id}.md').resolve()
+    require_under_root(path, root, 'scene note')
+    return path
+
+
+def render_scene_note_intent_block(intent: dict[str, Any]) -> str:
+    prepared = intent.get('prepared_run') or {}
+    lines = [
+        '<!-- vn-auto:scene-intent:start -->',
+        '## Automation Intent',
+        '',
+        f"- latest_intent: `{intent['intent_id']}`",
+        f"- status: `{intent['status']}`",
+        f"- intent_json: `{intent['intent_json']}`",
+        f"- intent_md: `{intent['intent_md']}`",
+        f"- before_script: `{prepared.get('before_script') or ''}`",
+        f"- capture_plan: `{prepared.get('capture_plan') or ''}`",
+        f"- asset_policy: `{intent['asset_policy']}`",
+        f"- permanent_asset_changes: `{intent['permanent_asset_changes']}`",
+        '',
+        '### Objective',
+        intent.get('objective') or 'none recorded',
+        '',
+        '### Owner Text',
+        intent.get('owner_text') or 'none recorded',
+        '',
+        '<!-- vn-auto:scene-intent:end -->',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def upsert_scene_note_intent_block(note_path: Path, block: str) -> None:
+    start = '<!-- vn-auto:scene-intent:start -->'
+    end = '<!-- vn-auto:scene-intent:end -->'
+    if not note_path.exists():
+        raise FileNotFoundError(note_path)
+    text = note_path.read_text(encoding='utf-8')
+    if start in text and end in text:
+        pattern = re.compile(re.escape(start) + r'.*?' + re.escape(end) + r'\n?', re.DOTALL)
+        text = pattern.sub(block, text, count=1)
+    else:
+        if text and not text.endswith('\n'):
+            text += '\n'
+        text += '\n' + block
+    note_path.write_text(text, encoding='utf-8')
+
+
 def render_markdown(intent: dict[str, Any]) -> str:
     lines = [
         f"# Scene Intent — {intent['scene_id']}",
@@ -138,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--start-label', default='')
     parser.add_argument('--script', default='game/script.rpy')
     parser.add_argument('--make-capture-plan', action='store_true')
+    parser.add_argument('--update-scene-note', action='store_true', help='Upsert a bounded Automation Intent block into the title-scoped Obsidian scene note.')
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args(argv)
 
@@ -226,10 +295,20 @@ def main(argv: list[str] | None = None) -> int:
             'before_script': project_rel(before_script, paths.project_root),
             'capture_plan': capture_rel,
         },
+        'intent_json': project_rel(intent_path, paths.project_root),
+        'intent_md': project_rel(intent_md, paths.project_root),
         'next_polish_scene_command': next_command,
     }
     save_json(intent_path, intent)
     write_text(intent_md, render_markdown(intent))
+    updated_scene_note: Path | None = None
+    if args.update_scene_note:
+        try:
+            updated_scene_note = scene_note_path(paths.contract, args.scene_id)
+            upsert_scene_note_intent_block(updated_scene_note, render_scene_note_intent_block(intent))
+        except Exception as exc:
+            print(f'SCENE_INTENT_REFUSED: {exc}')
+            return 2
 
     print('SCENE_INTENT_READY')
     print('scene_id', args.scene_id)
@@ -239,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
     print('before_script', before_script)
     if capture_rel:
         print('capture_plan', capture_plan_path)
+    if updated_scene_note:
+        print('scene_note', updated_scene_note)
     print('next_polish_scene_command')
     print(next_command)
     return 0

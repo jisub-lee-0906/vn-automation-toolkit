@@ -110,10 +110,11 @@ python -m vn_automation.cli scene-intent \
   --owner-text "<owner direction>" \
   --objective "<one-sentence implementation objective>" \
   --choice "<important choice text>" \
-  --make-capture-plan
+  --make-capture-plan \
+  --update-scene-note
 ```
 
-`scene-intent` writes `docs/automation/scene_intents/<scene_id>/<intent_id>.json`, a Markdown companion, `docs/validation/<intent_id>/script_before.rpy`, and optionally `docs/validation/<intent_id>/capture_plan.json`. It does **not** modify game scripts or assets; it prepares the safe patch/run context and prints the next `polish-scene` command.
+`scene-intent` writes `docs/automation/scene_intents/<scene_id>/<intent_id>.json`, a Markdown companion, `docs/validation/<intent_id>/script_before.rpy`, and optionally `docs/validation/<intent_id>/capture_plan.json`. With `--update-scene-note`, it also upserts a bounded `Automation Intent` block in the title-scoped Obsidian scene note using `<!-- vn-auto:scene-intent:start/end -->` anchors. It does **not** modify game scripts or assets; it prepares the safe patch/run context and prints the next `polish-scene` command.
 4. Implement one minimal vertical polish patch.
 5. Back up the pre-patch script slice, then run the post-patch harness:
 
