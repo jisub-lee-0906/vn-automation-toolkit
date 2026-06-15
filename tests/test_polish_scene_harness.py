@@ -94,6 +94,42 @@ def test_polish_scene_runs_guard_state_and_validation_without_assets(tmp_path: P
     assert pool['promotion_requires_owner_approval'] is True
 
 
+def test_polish_scene_runs_static_capture_plan_gate_and_links_report(tmp_path: Path) -> None:
+    project = bootstrap_project(tmp_path)
+    run_dir = project / 'docs/validation/scene001_capture_gate'
+    run_dir.mkdir(parents=True)
+    shutil.copy2(project / 'game/script.rpy', run_dir / 'script_before.rpy')
+    plan = run_dir / 'capture_plan.json'
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_001_opening',
+        'captures': [
+            {'name': 'opening_entry', 'warp_label': 'scene_001_opening', 'wait_seconds': 0.1},
+        ],
+    }), encoding='utf-8')
+
+    proc = run_cli(
+        'polish-scene',
+        '--project-root', str(project),
+        '--scene-id', 'scene_001_opening',
+        '--patch-id', 'scene001_capture_gate',
+        '--before', 'docs/validation/scene001_capture_gate/script_before.rpy',
+        '--start-label', 'scene_001_opening',
+        '--capture-plan', 'docs/validation/scene001_capture_gate/capture_plan.json',
+        '--capture-static-only',
+        '--skip-renpy-lint',
+    )
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert 'gate validate-scene 0' in proc.stdout
+    scene_validation = run_dir / 'scene_validation/manifest.json'
+    assert scene_validation.exists()
+    qa = json.loads((run_dir / 'scene_polish_qa_report.json').read_text(encoding='utf-8'))
+    assert qa['scene_validation_manifest'] == 'docs/validation/scene001_capture_gate/scene_validation/manifest.json'
+    assert qa['capture_plan'] == 'docs/validation/scene001_capture_gate/capture_plan.json'
+    state = json.loads((project / 'docs/automation/scene_remaster/current_state.json').read_text(encoding='utf-8'))
+    assert state['supplemental_qa_reports'] == ['docs/validation/scene001_capture_gate/scene_validation/report.md']
+
+
 def test_polish_scene_fails_closed_when_required_choice_missing(tmp_path: Path) -> None:
     project = bootstrap_project(tmp_path)
     run_dir = project / 'docs/validation/scene001_missing_choice'

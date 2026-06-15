@@ -76,6 +76,9 @@ def write_markdown_report(path: Path, report: dict[str, Any]) -> None:
         f"- permanent_asset_changes: `{report['permanent_asset_changes']}`",
         f"- before: `{report['before']}`",
         f"- after: `{report['after']}`",
+        f"- capture_plan: `{report.get('capture_plan') or ''}`",
+        f"- scene_validation_report: `{report.get('scene_validation_report') or ''}`",
+        f"- capture_sheet: `{report.get('capture_sheet') or ''}`",
         '',
         '## Gate Results',
     ]
@@ -121,6 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--fail-on-removed-label', action='store_true')
     parser.add_argument('--skip-renpy-lint', action='store_true')
     parser.add_argument('--lint-timeout', type=int, default=120)
+    parser.add_argument('--capture-plan', default='', help='Optional project-confined capture plan to validate/capture as part of the scene polish gate.')
+    parser.add_argument('--capture-static-only', action='store_true', help='Validate capture plan/static scene gates without launching RenPy screenshots.')
+    parser.add_argument('--capture-runtime-timeout', type=int, default=120)
     parser.add_argument('--next-step', action='append', default=[])
     args = parser.parse_args(argv)
 
@@ -130,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         paths = build_project_paths(args.project_root, args.contract)
         before = resolve_under_project(paths.project_root, args.before, 'before')
         after = resolve_under_project(paths.project_root, args.after, 'after')
+        capture_plan = resolve_under_project(paths.project_root, args.capture_plan, 'capture plan') if args.capture_plan else None
     except Exception as exc:
         print(f'POLISH_SCENE_REFUSED: {exc}')
         return 2
@@ -176,6 +183,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         gates.append(run_renpy_lint(paths.contract.get('renpy_sdk_exe', ''), paths.project_root, args.lint_timeout))
 
+    scene_validation_dir = run_dir / 'scene_validation'
+    scene_validation_manifest = None
+    scene_validation_report = None
+    capture_sheet = None
+    if capture_plan:
+        validate_scene_args = [
+            '--project-root', str(paths.project_root),
+            '--scene-id', scene_id,
+            '--capture-plan', str(capture_plan),
+            '--out-dir', str(scene_validation_dir),
+            '--runtime-timeout', str(args.capture_runtime_timeout),
+        ]
+        if args.capture_static_only:
+            validate_scene_args.append('--static-only')
+        gates.append(run_tool('validate-scene', validate_scene_args))
+        scene_validation_manifest = scene_validation_dir / 'manifest.json'
+        scene_validation_report = scene_validation_dir / 'report.md'
+        candidate_sheet = scene_validation_dir / 'gameplay_screenshots' / f'{scene_id}_contact_sheet.png'
+        if candidate_sheet.exists():
+            capture_sheet = candidate_sheet
+
     failure = first_failure(gates)
     if failure:
         print(f"POLISH_SCENE_FAILED {failure['name']}")
@@ -196,6 +224,10 @@ def main(argv: list[str] | None = None) -> int:
         'after': project_rel(after, paths.project_root),
         'changed_files': changed_files,
         'guard_report': project_rel(guard_path, paths.project_root),
+        'capture_plan': project_rel(capture_plan, paths.project_root) if capture_plan else None,
+        'scene_validation_manifest': project_rel(scene_validation_manifest, paths.project_root) if scene_validation_manifest and scene_validation_manifest.exists() else None,
+        'scene_validation_report': project_rel(scene_validation_report, paths.project_root) if scene_validation_report and scene_validation_report.exists() else None,
+        'capture_sheet': project_rel(capture_sheet, paths.project_root) if capture_sheet else None,
         'gates': gates,
         'next_steps': args.next_step,
     }
@@ -214,6 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     ]
     for changed in changed_files:
         state_args.extend(['--changed-file', changed])
+    if scene_validation_report and scene_validation_report.exists():
+        state_args.extend(['--supplemental-qa-report', project_rel(scene_validation_report, paths.project_root)])
+    if capture_sheet:
+        state_args.extend(['--capture-sheet', project_rel(capture_sheet, paths.project_root)])
     for step in args.next_step:
         state_args.extend(['--next-step', step])
     state_gate = run_tool('scene-state', state_args)
@@ -241,6 +277,10 @@ def main(argv: list[str] | None = None) -> int:
     print('patch_id', patch_id)
     print('qa_report', qa_md)
     print('guard_report', guard_path)
+    if scene_validation_report and scene_validation_report.exists():
+        print('scene_validation_report', scene_validation_report)
+    if capture_sheet:
+        print('capture_sheet', capture_sheet)
     for gate in gates:
         print('gate', gate['name'], gate['returncode'], gate.get('skipped', ''))
     return 0

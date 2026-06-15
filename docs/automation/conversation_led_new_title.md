@@ -114,8 +114,22 @@ python -m vn_automation.cli polish-scene \
 ```
 
 `polish-scene` runs deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, writes `scene_polish_qa_report.md/json`, writes `scene-state`, and immediately verifies it with `scene-state --check-existing` while preserving `scene_local_preview_only` and `permanent_asset_changes=false`.
-5. Add screenshot/contact-sheet capture when the patch changes visible gameplay or when owner review needs visual evidence.
-6. Continue scene-by-scene.
+
+When the patch changes visible gameplay or owner review needs visual evidence, attach a project-confined capture plan:
+
+```bash
+python -m vn_automation.cli polish-scene \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --patch-id <safe_patch_id> \
+  --before docs/validation/<safe_patch_id>/script_before.rpy \
+  --start-label scene_001_opening \
+  --changed-file game/script.rpy \
+  --capture-plan docs/validation/<safe_patch_id>/capture_plan.json
+```
+
+For CI/static smoke, add `--capture-static-only`; for owner-facing visual QA, omit it so `validate-scene` runs runtime capture/contact-sheet gates. Runtime contact sheets are linked into `scene-state` as `capture_sheets`; static validation reports are linked as supplemental QA.
+5. Continue scene-by-scene.
 
 ## Verification Snapshot
 

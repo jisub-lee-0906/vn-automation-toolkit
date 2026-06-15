@@ -168,7 +168,7 @@ Command coverage summary:
 - `promote` — project command with confined metadata, candidate, QA, manifest, destination, and logs.
 - `verify` — project command; configured external runtime dependencies are intentional.
 - `preflight` — project command that verifies contract, sidecars, workflow index, and Obsidian scope.
-- `polish-scene` — post-patch vertical-polish harness with project-confined before/after scripts, deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, QA report writeback, `scene-state`, and `scene-state --check-existing`.
+- `polish-scene` — post-patch vertical-polish harness with project-confined before/after scripts and optional capture plan, deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, optional `validate-scene`, QA report writeback, `scene-state`, and `scene-state --check-existing`.
 - `validate-scene` — project command with capture-plan and validation output confinement.
 - `capture-scene` — project command with capture-plan and screenshot output confinement.
 - `scene-guard` — project command with confined before/after script inputs and guard report output for deterministic patch invariant checks.

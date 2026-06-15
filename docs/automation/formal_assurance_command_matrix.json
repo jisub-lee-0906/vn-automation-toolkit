@@ -116,9 +116,10 @@
   "polish-scene": {
     "class": "project",
     "project_selection": "explicit --project-root/--contract via centralized project path builder",
-    "path_policy": "Requires before/after script paths under project root, writes guard and QA report under docs/validation/<patch_id>, runs scene-guard/validate/obsidian-audit/RenPy lint, then scene-state writeback and scene-state --check-existing with scene_local_preview_only and permanent_asset_changes=false.",
+    "path_policy": "Requires before/after script paths under project root, writes guard and QA report under docs/validation/<patch_id>, runs scene-guard/validate/obsidian-audit/optional RenPy lint, optionally runs validate-scene from a project-confined capture plan, then scene-state writeback and scene-state --check-existing with scene_local_preview_only and permanent_asset_changes=false. Runtime contact sheets are linked as capture_sheets when produced; static capture validation reports are linked as supplemental QA.",
     "evidence": [
       "tests/test_polish_scene_harness.py::test_polish_scene_runs_guard_state_and_validation_without_assets",
+      "tests/test_polish_scene_harness.py::test_polish_scene_runs_static_capture_plan_gate_and_links_report",
       "tests/test_polish_scene_harness.py::test_polish_scene_fails_closed_when_required_choice_missing"
     ]
   },
