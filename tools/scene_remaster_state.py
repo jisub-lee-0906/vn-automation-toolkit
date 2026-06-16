@@ -170,6 +170,123 @@ def validate_existing_scene_state(paths: Any, scene_id: str) -> tuple[int, list[
     return (1 if errors else 0), errors, summary
 
 
+def validate_archived_scene_state(paths: Any, scene_id: str) -> tuple[int, list[str], dict[str, Any]]:
+    """Validate docs/automation/scene_remaster/states/<scene_id>.json without requiring it to be active current_state.
+
+    Use this for completed/locked past scenes after current_state has moved to the next active unit.
+    """
+    base = paths.docs_automation / 'scene_remaster'
+    state_path = base / 'states' / f'{scene_id}.json'
+    errors: list[str] = []
+    summary: dict[str, Any] = {
+        'state': state_path.relative_to(paths.project_root).as_posix(),
+        'scene_id': scene_id,
+        'mode': 'archived_scene_state',
+    }
+    if not state_path.exists():
+        return 1, [f'missing scene state: {state_path}'], summary
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        return 1, [f'invalid scene state json: {exc}'], summary
+    if state.get('scene_id') != scene_id:
+        errors.append(f'scene state scene_id mismatch: {state.get("scene_id")} != {scene_id}')
+    asset_policy = state.get('asset_policy')
+    permanent_asset_changes = bool(state.get('permanent_asset_changes'))
+    is_approved_promotion = (
+        asset_policy == 'approved_promotion_only'
+        and permanent_asset_changes
+        and state.get('status') == 'owner_approved'
+        and state.get('approval_status') == 'approved'
+    )
+    if asset_policy == 'scene_local_preview_only':
+        if permanent_asset_changes:
+            errors.append('scene state permanent_asset_changes must be false for scene-local preview state')
+    elif not is_approved_promotion:
+        errors.append(
+            'scene state asset_policy must be scene_local_preview_only, or approved_promotion_only '
+            f'with owner_approved/approved permanent changes: {asset_policy}'
+        )
+
+    def require_project_rel(raw: str | None, label: str, required: bool = True) -> Path | None:
+        if not raw:
+            if required:
+                errors.append(f'missing {label}')
+            return None
+        try:
+            rel = resolve_project_rel(paths.project_root, raw, label)
+        except Exception as exc:
+            errors.append(f'invalid {label}: {exc}')
+            return None
+        p = paths.project_root / rel
+        if not p.exists():
+            errors.append(f'missing {label}: {rel}')
+        return p
+
+    qa_report = require_project_rel(state.get('latest_qa_report'), 'latest_qa_report')
+    guard_report = require_project_rel(state.get('latest_guard_report'), 'latest_guard_report')
+    patch_manifest_path = require_project_rel(state.get('patch_manifest'), 'patch_manifest')
+    scene_pool_path = require_project_rel(state.get('scene_pool'), 'scene_pool')
+    for idx, sheet in enumerate(state.get('capture_sheets') or []):
+        require_project_rel(sheet, f'capture_sheet[{idx}]')
+    for idx, report in enumerate(state.get('supplemental_qa_reports') or []):
+        require_project_rel(report, f'supplemental_qa_report[{idx}]')
+
+    if patch_manifest_path and patch_manifest_path.exists():
+        try:
+            patch_manifest = json.loads(patch_manifest_path.read_text(encoding='utf-8'))
+        except Exception as exc:
+            errors.append(f'invalid patch_manifest json: {exc}')
+        else:
+            if patch_manifest.get('scene_id') != scene_id:
+                errors.append(f'patch_manifest scene_id mismatch: {patch_manifest.get("scene_id")} != {scene_id}')
+            if patch_manifest.get('patch_id') != state.get('latest_patch_id'):
+                errors.append('patch_manifest patch_id does not match scene state latest_patch_id')
+            if patch_manifest.get('qa_report') != state.get('latest_qa_report'):
+                errors.append('patch_manifest qa_report does not match scene state latest_qa_report')
+            if patch_manifest.get('guard_report') != state.get('latest_guard_report'):
+                errors.append('patch_manifest guard_report does not match scene state latest_guard_report')
+            if (patch_manifest.get('capture_sheets') or []) != (state.get('capture_sheets') or []):
+                errors.append('patch_manifest capture_sheets does not match scene state')
+            if (patch_manifest.get('supplemental_qa_reports') or []) != (state.get('supplemental_qa_reports') or []):
+                errors.append('patch_manifest supplemental_qa_reports does not match scene state')
+
+    if scene_pool_path and scene_pool_path.exists():
+        try:
+            pool = json.loads(scene_pool_path.read_text(encoding='utf-8'))
+        except Exception as exc:
+            errors.append(f'invalid scene_pool json: {exc}')
+            pool = {}
+        else:
+            if pool.get('scene_id') != scene_id:
+                errors.append(f'scene_pool scene_id mismatch: {pool.get("scene_id")} != {scene_id}')
+            if pool.get('policy') != 'scene_local_preview_only':
+                errors.append(f'scene_pool policy is not scene_local_preview_only: {pool.get("policy")}')
+            if pool.get('global_replacement_allowed') is not False:
+                errors.append('scene_pool global_replacement_allowed must be false')
+            if pool.get('promotion_requires_owner_approval') is not True:
+                errors.append('scene_pool promotion_requires_owner_approval must be true')
+    else:
+        pool = {}
+
+    summary.update({
+        'status': state.get('status'),
+        'latest_patch_id': state.get('latest_patch_id'),
+        'approval_status': state.get('approval_status'),
+        'asset_policy': state.get('asset_policy'),
+        'permanent_asset_changes': bool(state.get('permanent_asset_changes')),
+        'qa_report': state.get('latest_qa_report'),
+        'guard_report': state.get('latest_guard_report'),
+        'capture_sheets': state.get('capture_sheets') or [],
+        'supplemental_qa_reports': state.get('supplemental_qa_reports') or [],
+        'patch_manifest': state.get('patch_manifest'),
+        'scene_pool': state.get('scene_pool'),
+        'candidate_count': len((pool or {}).get('candidates') or []) if isinstance(pool, dict) else None,
+        'errors': errors,
+    })
+    return (1 if errors else 0), errors, summary
+
+
 def update_scene_pool(pool_path: Path, project_root: Path, scene_id: str, candidate_values: list[str]) -> dict[str, Any]:
     pool = load_json(pool_path, {
         'schema_version': 1,
@@ -272,7 +389,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--known-blocker', action='append', default=[])
     parser.add_argument('--next-step', action='append', default=[])
     parser.add_argument('--candidate', action='append', default=[], help='Scene-local preview candidate: candidate_id|asset_type|project/path|purpose')
-    parser.add_argument('--check-existing', action='store_true', help='Validate existing current_state/patch/pool links without writing files.')
+    parser.add_argument('--check-existing', action='store_true', help='Validate existing active current_state/patch/pool links without writing files.')
+    parser.add_argument('--check-scene-state', action='store_true', help='Validate states/<scene_id>.json for completed/non-active scenes without requiring current_state to point at it.')
     args = parser.parse_args(argv)
 
     if not SAFE_ID_RE.fullmatch(args.scene_id):
@@ -286,6 +404,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     paths = build_project_paths(args.project_root, args.contract)
+    if args.check_existing and args.check_scene_state:
+        print('SCENE_REMASTER_STATE_REFUSED: choose only one of --check-existing or --check-scene-state')
+        return 2
     if args.check_existing:
         rc, errors, summary = validate_existing_scene_state(paths, args.scene_id)
         print('SCENE_REMASTER_STATE_CHECK_' + ('PASSED' if rc == 0 else 'FAILED'))
@@ -293,8 +414,15 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print('-', error)
         return rc
+    if args.check_scene_state:
+        rc, errors, summary = validate_archived_scene_state(paths, args.scene_id)
+        print('SCENE_REMASTER_ARCHIVED_STATE_CHECK_' + ('PASSED' if rc == 0 else 'FAILED'))
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        for error in errors:
+            print('-', error)
+        return rc
     if not args.status:
-        print('SCENE_REMASTER_STATE_REFUSED: --status is required unless --check-existing is used')
+        print('SCENE_REMASTER_STATE_REFUSED: --status is required unless --check-existing or --check-scene-state is used')
         return 2
 
     base = paths.docs_automation / 'scene_remaster'

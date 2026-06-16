@@ -320,3 +320,100 @@ def test_audio_bgm_with_sfx_runner_prepare_only_patches_prompt_and_metadata(tmp_
     assert patched['52:7']['inputs']['text'] == ''
     assert patched['52:43']['inputs']['choice'] == 'One-shot'
     assert patched['19']['inputs']['filename_prefix'].startswith('audio_bgm_with_sfx/')
+
+
+
+def make_audio_workflow_pack(workflow_pack: Path) -> None:
+    workflow = {
+        '52:31': {'class_type': 'PrimitiveStringMultiline', 'inputs': {'value': 'old prompt'}},
+        '52:7': {'class_type': 'CLIPTextEncode', 'inputs': {'text': 'old negative'}},
+        '52:43': {'class_type': 'CustomCombo', 'inputs': {'choice': 'Music', 'index': 0}},
+        '52:36': {'class_type': 'PrimitiveFloat', 'inputs': {'value': 150.0}},
+        '52:35': {'class_type': 'PrimitiveBoolean', 'inputs': {'value': True}},
+        '52:3': {'class_type': 'KSampler', 'inputs': {'seed': 0, 'steps': 8, 'cfg': 1.0, 'sampler_name': 'lcm', 'scheduler': 'simple'}},
+        '19': {'class_type': 'SaveAudioMP3', 'inputs': {'filename_prefix': 'old_prefix'}},
+    }
+    write_json(workflow_pack / 'audio_bgm_with_sfx/audio_bgm_with_sfx_workflow_api.json', workflow)
+
+
+def test_audio_bgm_runner_rejects_non_sa3_vn_bgm_prompt_and_runtime(tmp_path: Path):
+    project = tmp_path / 'project'
+    workflow_pack = tmp_path / 'workflow_pack'
+    write_json(project / 'docs/automation/project_contract.json', {
+        'workflow_pack_root': str(workflow_pack),
+        'comfyui_output_root': str(tmp_path / 'output'),
+        'comfyui_input_root': str(tmp_path / 'input'),
+        'comfyui_endpoint_candidates': ['http://127.0.0.1:65534'],
+    })
+    make_audio_workflow_pack(workflow_pack)
+    slots = project / 'docs/production/prompt_slots/bgm_bad_piano.json'
+    write_json(slots, {
+        'workflow_id': 'audio_bgm_with_sfx',
+        'asset_id': 'bgm_bad_piano',
+        'audio_role': 'audio_bgm',
+        'prompt_slots': {
+            'positive_prompt': 'solo classical piano, dark minor-key nocturne',
+            'mode': 'Music',
+            'steps': 24,
+            'cfg': 6.5,
+        },
+    })
+    proc = subprocess.run([
+        sys.executable, str(AUDIO_SCRIPT),
+        '--project-root', str(project),
+        '--asset-id', 'bgm_bad_piano',
+        '--asset-type', 'bgm',
+        '--scene-id', 'scene',
+        '--prompt-slots', str(slots),
+        '--prepare-only',
+    ], cwd=ROOT, text=True, capture_output=True)
+    assert proc.returncode != 0
+    combined = proc.stdout + proc.stderr
+    assert 'SA3_BGM_PROMPT_RUNTIME_GUARD' in combined
+    assert 'steps must be 8' in combined
+    assert 'cfg must be 1.0' in combined
+    assert 'dialogue friendly' in combined
+
+
+def test_audio_bgm_runner_accepts_sa3_vn_bgm_prompt_defaults(tmp_path: Path):
+    project = tmp_path / 'project'
+    workflow_pack = tmp_path / 'workflow_pack'
+    write_json(project / 'docs/automation/project_contract.json', {
+        'workflow_pack_root': str(workflow_pack),
+        'comfyui_output_root': str(tmp_path / 'output'),
+        'comfyui_input_root': str(tmp_path / 'input'),
+        'comfyui_endpoint_candidates': ['http://127.0.0.1:65534'],
+    })
+    make_audio_workflow_pack(workflow_pack)
+    slots = project / 'docs/production/prompt_slots/bgm_good_piano.json'
+    write_json(slots, {
+        'workflow_id': 'audio_bgm_with_sfx',
+        'asset_id': 'bgm_good_piano',
+        'audio_role': 'audio_bgm',
+        'prompt_slots': {
+            'positive_prompt': 'instrumental visual novel background music, dark classical piano, solo felt piano lead, slow minor arpeggios, low density arrangement, quiet opening scene underscore, no vocals, no singing, no lyrics, dialogue friendly, loopable',
+            'negative_prompt': 'speech, human voice, talking, singing, lyrics, distorted, clipping',
+            'mode': 'Music',
+            'duration': 24.0,
+            'steps': 8,
+            'cfg': 1.0,
+            'sampler_name': 'lcm',
+            'scheduler': 'simple',
+        },
+    })
+    out = project / 'docs/automation/generation_runs/prepared_bgm.json'
+    proc = subprocess.run([
+        sys.executable, str(AUDIO_SCRIPT),
+        '--project-root', str(project),
+        '--asset-id', 'bgm_good_piano',
+        '--asset-type', 'bgm',
+        '--scene-id', 'scene',
+        '--prompt-slots', str(slots),
+        '--prepare-only',
+        '--out-metadata', str(out),
+    ], cwd=ROOT, text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(out.read_text(encoding='utf-8'))
+    assert data['steps'] == 8
+    assert data['cfg'] == 1.0
+    assert data['audio_mode'] == 'Music'

@@ -193,3 +193,112 @@ def test_scene_remaster_state_check_existing_fails_unsafe_pool(tmp_path: Path) -
     ])
 
     assert rc == 1
+
+
+def test_scene_state_can_validate_archived_non_active_scene_state(tmp_path: Path) -> None:
+    write_contract(tmp_path)
+    guard = tmp_path / 'docs/validation/scene001_locked/scene_patch_guard.json'
+    qa = tmp_path / 'docs/validation/scene001_locked/qa.md'
+    sheet = tmp_path / 'docs/validation/scene001_locked/contact.png'
+    report = tmp_path / 'docs/validation/scene001_locked/report.md'
+    for path in [guard, qa, sheet, report]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    guard.write_text('{}\n', encoding='utf-8')
+    qa.write_text('# qa\n', encoding='utf-8')
+    sheet.write_bytes(b'png')
+    report.write_text('# report\n', encoding='utf-8')
+
+    locked = scene_remaster_state.main([
+        '--project-root', str(tmp_path),
+        '--scene-id', 'scene_001_opening',
+        '--patch-id', 'scene001_locked',
+        '--status', 'owner_approved',
+        '--approval-status', 'approved',
+        '--asset-policy', 'scene_local_preview_only',
+        '--changed-file', 'game/script.rpy',
+        '--qa-report', 'docs/validation/scene001_locked/qa.md',
+        '--guard-report', 'docs/validation/scene001_locked/scene_patch_guard.json',
+        '--capture-sheet', 'docs/validation/scene001_locked/contact.png',
+        '--supplemental-qa-report', 'docs/validation/scene001_locked/report.md',
+    ])
+    assert locked == 0
+
+    active = scene_remaster_state.main([
+        '--project-root', str(tmp_path),
+        '--scene-id', 'scene_002_opening_followup',
+        '--patch-id', 'scene002_active',
+        '--status', 'owner_review_pending',
+        '--approval-status', 'pending',
+        '--asset-policy', 'scene_local_preview_only',
+        '--changed-file', 'game/script.rpy',
+        '--qa-report', 'docs/validation/scene001_locked/qa.md',
+        '--guard-report', 'docs/validation/scene001_locked/scene_patch_guard.json',
+    ])
+    assert active == 0
+
+    current_check = scene_remaster_state.main([
+        '--project-root', str(tmp_path),
+        '--scene-id', 'scene_001_opening',
+        '--check-existing',
+    ])
+    assert current_check == 1
+
+    archived_check = scene_remaster_state.main([
+        '--project-root', str(tmp_path),
+        '--scene-id', 'scene_001_opening',
+        '--check-scene-state',
+    ])
+    assert archived_check == 0
+
+
+def test_scene_state_can_validate_archived_owner_approved_promotion(tmp_path: Path) -> None:
+    project = tmp_path
+    write_contract(project)
+    (project / 'docs/automation/scene_remaster/states').mkdir(parents=True, exist_ok=True)
+    (project / 'docs/automation/scene_remaster/patches').mkdir(parents=True, exist_ok=True)
+    (project / 'docs/automation/scene_remaster/scene_pools').mkdir(parents=True, exist_ok=True)
+    (project / 'docs/validation/run').mkdir(parents=True, exist_ok=True)
+    for rel in [
+        'docs/validation/run/qa.md',
+        'docs/validation/run/guard.json',
+        'docs/validation/run/supplemental.md',
+    ]:
+        (project / rel).write_text('{}', encoding='utf-8')
+    pool = {
+        'scene_id': 'scene_001',
+        'policy': 'scene_local_preview_only',
+        'global_replacement_allowed': False,
+        'promotion_requires_owner_approval': True,
+        'candidates': [],
+    }
+    (project / 'docs/automation/scene_remaster/scene_pools/scene_001.json').write_text(json.dumps(pool), encoding='utf-8')
+    state = {
+        'scene_id': 'scene_001',
+        'status': 'owner_approved',
+        'approval_status': 'approved',
+        'latest_patch_id': 'scene001_audio_approved',
+        'asset_policy': 'approved_promotion_only',
+        'permanent_asset_changes': True,
+        'latest_qa_report': 'docs/validation/run/qa.md',
+        'latest_guard_report': 'docs/validation/run/guard.json',
+        'capture_sheets': [],
+        'supplemental_qa_reports': ['docs/validation/run/supplemental.md'],
+        'patch_manifest': 'docs/automation/scene_remaster/patches/scene001_audio_approved.json',
+        'scene_pool': 'docs/automation/scene_remaster/scene_pools/scene_001.json',
+    }
+    patch = {
+        'scene_id': 'scene_001',
+        'patch_id': 'scene001_audio_approved',
+        'qa_report': 'docs/validation/run/qa.md',
+        'guard_report': 'docs/validation/run/guard.json',
+        'capture_sheets': [],
+        'supplemental_qa_reports': ['docs/validation/run/supplemental.md'],
+    }
+    (project / 'docs/automation/scene_remaster/states/scene_001.json').write_text(json.dumps(state), encoding='utf-8')
+    (project / 'docs/automation/scene_remaster/patches/scene001_audio_approved.json').write_text(json.dumps(patch), encoding='utf-8')
+    rc = scene_remaster_state.main([
+        '--project-root', str(project),
+        '--scene-id', 'scene_001',
+        '--check-scene-state',
+    ])
+    assert rc == 0

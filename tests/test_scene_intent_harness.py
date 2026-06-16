@@ -95,9 +95,17 @@ def test_scene_intent_prepares_patch_run_without_touching_game_script(tmp_path: 
     assert before.exists()
     assert before.read_text(encoding='utf-8') == before_script
     plan = json.loads((project / 'docs/validation/scene001_first_choice_direction/capture_plan.json').read_text(encoding='utf-8'))
+    assert plan['schema_version'] == 1
     assert plan['scene_id'] == 'scene_001_opening'
+    assert plan['start_label'] == 'scene_001_opening'
+    assert len(plan['captures']) >= 2
+    assert plan['captures'][0]['name'] == 'scene_001_opening_entry'
     assert plan['captures'][0]['warp_label'] == 'scene_001_opening'
-    assert plan['captures'][0]['expect_menu_choices'] == ['첫 장면의 방향을 정한다', '세계의 규칙을 확인한다', '관계의 균열을 본다']
+    assert plan['captures'][0]['warp_offset_lines'] == 0
+    assert 'review_note' in plan
+    menu_capture = plan['captures'][1]
+    assert menu_capture['name'] == 'scene_001_opening_first_menu'
+    assert menu_capture['expect_menu_choices'] == ['첫 장면의 방향을 정한다', '세계의 규칙을 확인한다', '관계의 균열을 본다']
 
 
 def test_scene_intent_refuses_empty_owner_text_and_no_objective(tmp_path: Path) -> None:

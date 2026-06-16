@@ -246,17 +246,30 @@ def main(argv: list[str] | None = None) -> int:
     existing_choices, menu_offset = extract_first_menu_choices(script_lines, start_label)
     capture_rel = None
     if args.make_capture_plan:
+        captures: list[dict[str, Any]] = [
+            {
+                'name': f'{args.scene_id}_entry',
+                'warp_label': start_label,
+                'warp_offset_lines': 0,
+                'wait_seconds': 1.0,
+                'description': 'Scene entry / first stable beat. Review and expand this plan with branch, UI, asset, and convergence beats before owner signoff.',
+            }
+        ]
+        if existing_choices:
+            captures.append({
+                'name': f'{args.scene_id}_first_menu',
+                'warp_label': start_label,
+                'warp_offset_lines': menu_offset,
+                'wait_seconds': 1.0,
+                'expect_menu_choices': existing_choices,
+                'description': 'First menu / choice proof. Add additional branch and convergence captures for full owner review.',
+            })
         capture_plan = {
+            'schema_version': 1,
             'scene_id': args.scene_id,
-            'captures': [
-                {
-                    'name': f'{args.scene_id}_entry',
-                    'warp_label': start_label,
-                    'warp_offset_lines': menu_offset,
-                    'wait_seconds': 0.5,
-                    'expect_menu_choices': existing_choices,
-                }
-            ],
+            'start_label': start_label,
+            'captures': captures,
+            'review_note': 'Auto-generated starter plan. For scene remaster signoff, expand with key branches, UI/card/no-card checks, asset beats, and convergence/transition captures.',
         }
         save_json(capture_plan_path, capture_plan)
         capture_rel = project_rel(capture_plan_path, paths.project_root)
