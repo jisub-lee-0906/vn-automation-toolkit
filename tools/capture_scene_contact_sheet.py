@@ -14,7 +14,7 @@ TOOLS = ROOT / 'tools'
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
-from vn_product_config import build_project_paths, require_under  # noqa: E402
+from vn_product_config import build_project_paths, display_profile, renpy_dimensions, require_under  # noqa: E402
 from validate_scene import SAFE_SCENE_ID_RE, ALLOWED_CAPTURE_KEYS, resolve_capture_warp, validate_capture_plan  # noqa: E402
 
 
@@ -44,7 +44,39 @@ def find_window_for_pid(pid: int):
     return max(matches, key=lambda item: (item[1][2] - item[1][0]) * (item[1][3] - item[1][1]))
 
 
-def capture_window(pid: int, out_path: Path) -> None:
+
+def window_adjustment_plan(
+    rect: tuple[int, int, int, int],
+    *,
+    target_window_size: tuple[int, int] | None = None,
+    preserve_window_rect: bool = True,
+    restore_window_rect: bool = True,
+    force_position: tuple[int, int] | None = None,
+) -> dict[str, Any]:
+    original = list(rect)
+    if preserve_window_rect or not target_window_size:
+        return {
+            'move_before_capture': False,
+            'capture_rect': original,
+            'target_rect': None,
+            'restore_after_capture': False,
+            'restore_rect': original,
+            'preserve_window_rect': preserve_window_rect,
+        }
+    target_w, target_h = target_window_size
+    x, y = force_position if force_position is not None else (rect[0], rect[1])
+    target_rect = [int(x), int(y), int(x + target_w), int(y + target_h)]
+    return {
+        'move_before_capture': True,
+        'capture_rect': target_rect,
+        'target_rect': target_rect,
+        'restore_after_capture': bool(restore_window_rect),
+        'restore_rect': original,
+        'preserve_window_rect': preserve_window_rect,
+    }
+
+
+def capture_window(pid: int, out_path: Path, *, target_window_size: tuple[int, int] | None = None, preserve_window_rect: bool = True, restore_window_rect: bool = True, force_position: tuple[int, int] | None = None) -> dict[str, Any]:
     from PIL import ImageGrab  # type: ignore
     import win32con  # type: ignore
     import win32gui  # type: ignore
@@ -58,19 +90,33 @@ def capture_window(pid: int, out_path: Path) -> None:
         time.sleep(0.25)
     if not info:
         raise RuntimeError(f'No visible RenPy window found for pid {pid}')
-    hwnd, rect, _title = info
+    hwnd, rect, title = info
+    adjustment = window_adjustment_plan(rect, target_window_size=target_window_size, preserve_window_rect=preserve_window_rect, restore_window_rect=restore_window_rect, force_position=force_position)
+    target = {'width': target_window_size[0], 'height': target_window_size[1], 'reason': 'display_profile_phone_scaled'} if target_window_size else None
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        width = max(1, rect[2] - rect[0])
-        height = max(1, rect[3] - rect[1])
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, rect[0], rect[1], width, height, win32con.SWP_SHOWWINDOW)
+        if adjustment['move_before_capture']:
+            tr = adjustment['target_rect']
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, tr[0], tr[1], tr[2] - tr[0], tr[3] - tr[1], win32con.SWP_SHOWWINDOW)
+            time.sleep(0.25)
+        else:
+            # Do not move or resize the window by default. Only foreground it for a stable crop.
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1], win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_SHOWWINDOW)
         win32gui.SetForegroundWindow(hwnd)
     except Exception:
         pass
     time.sleep(0.6)
+    rect = win32gui.GetWindowRect(hwnd)
     img = ImageGrab.grab(bbox=rect)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
+    if adjustment.get('restore_after_capture'):
+        try:
+            rr = adjustment['restore_rect']
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, rr[0], rr[1], rr[2] - rr[0], rr[3] - rr[1], win32con.SWP_SHOWWINDOW)
+        except Exception:
+            pass
+    return {'title': title, 'window_rect': list(rect), 'target_window_size': target, 'captured_size': list(img.size), 'window_adjustment': adjustment}
 
 
 KEY_VK = {
@@ -173,6 +219,24 @@ def perform_pre_capture_actions(pid: int, actions: list[dict[str, Any]]) -> list
     return performed
 
 
+def capture_actions(cap: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize legacy `advance` plus explicit pre-capture actions.
+
+    Capture plans historically used `advance` to mean repeated dialogue
+    advances, but runtime capture only executed `pre_capture_actions`. Keep the
+    shorthand by translating it to Enter key actions before any explicit actions.
+    """
+    actions: list[dict[str, Any]] = []
+    advance = int(cap.get('advance', 0) or 0)
+    if advance > 0:
+        actions.append({'type': 'key', 'key': 'enter', 'repeat': advance, 'interval_seconds': 0.15})
+    raw_actions = cap.get('pre_capture_actions') or []
+    if isinstance(raw_actions, list):
+        actions.extend(raw_actions)
+    return actions
+
+
+
 def analyze_screenshot_quality(path: Path, *, allow_blank: bool = False) -> dict[str, Any]:
     """Detect accidental black/blank captures from bad Ren'Py warp timing.
 
@@ -251,6 +315,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--dry-run', action='store_true', help='Validate plan and print intended captures without launching RenPy.')
     parser.add_argument('--runtime-timeout', type=int, default=120, help='Overall timeout seconds for each RenPy capture process.')
     parser.add_argument('--allow-blank-captures', action='store_true', help='Allow intentional black/blank captures. Default fails closed on likely bad warp timing.')
+    parser.add_argument('--phone-scale-window', action='store_true', help='Force a scaled 9:16-ish RenPy window that fits on desktop before capture.')
+    parser.add_argument('--viewport-width', type=int, default=0, help='Optional target RenPy/profile width for capture window scaling.')
+    parser.add_argument('--viewport-height', type=int, default=0, help='Optional target RenPy/profile height for capture window scaling.')
+    parser.add_argument('--move-window-for-capture', action='store_true', help='Opt in to moving/resizing the RenPy window for capture. Default preserves the current window rect.')
+    parser.add_argument('--no-restore-window-rect', action='store_true', help='Do not restore the original window rect after an opt-in move/resize.')
+    parser.add_argument('--force-window-position', default='', help='Optional x,y window position used only with --move-window-for-capture.')
     args = parser.parse_args(argv)
 
 
@@ -305,6 +375,25 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f'CAPTURE_SCENE_REFUSED: runtime capture dependencies missing: {exc}')
         return 2
+    profile = display_profile(paths.contract)
+    renpy_w, renpy_h = renpy_dimensions(paths.contract)
+    viewport_w = args.viewport_width or renpy_w
+    viewport_h = args.viewport_height or renpy_h
+    use_phone_scale = args.phone_scale_window or viewport_h > viewport_w or str(profile.get('aspect_ratio')) == '9:16'
+    force_position = None
+    if args.force_window_position:
+        try:
+            fx, fy = args.force_window_position.split(',', 1)
+            force_position = (int(fx), int(fy))
+        except Exception:
+            print('CAPTURE_SCENE_REFUSED: --force-window-position must be x,y')
+            return 2
+    target_window_size = None
+    if use_phone_scale:
+        # Keep a phone-shaped window on-screen; actual RenPy internal resolution is still controlled by the game.
+        target_w = 430
+        target_h = max(1, int(round(target_w * viewport_h / max(1, viewport_w))))
+        target_window_size = (target_w, target_h)
     renpy = paths.contract.get('renpy_sdk_exe')
     renpy_path = Path(renpy) if renpy else None
     if not renpy_path or not renpy_path.exists() or not renpy_path.is_file():
@@ -333,13 +422,13 @@ def main(argv: list[str] | None = None) -> int:
             time.sleep(wait)
             if time.time() > deadline:
                 raise TimeoutError(f'capture {name} exceeded timeout before screenshot')
-            actions = cap.get('pre_capture_actions') or []
+            actions = capture_actions(cap)
             performed_actions = perform_pre_capture_actions(proc.pid, actions) if actions else []
             if time.time() > deadline:
                 raise TimeoutError(f'capture {name} exceeded timeout before screenshot')
-            capture_window(proc.pid, out)
+            capture_meta = capture_window(proc.pid, out, target_window_size=target_window_size, preserve_window_rect=not args.move_window_for_capture, restore_window_rect=not args.no_restore_window_rect, force_position=force_position)
             quality = analyze_screenshot_quality(out, allow_blank=bool(cap.get('allow_blank') or args.allow_blank_captures))
-            quality_result = {'name': name, 'path': str(out), 'warp': warp, 'pre_capture_actions': performed_actions, **quality}
+            quality_result = {'name': name, 'path': str(out), 'warp': warp, 'pre_capture_actions': performed_actions, 'capture_meta': capture_meta, **quality}
             quality_results.append(quality_result)
             if quality['status'] != 'PASS':
                 qa_path = out_dir / 'capture_quality_failed.json'
@@ -377,6 +466,8 @@ def main(argv: list[str] | None = None) -> int:
         'capture_plan': str(plan_path),
         'screenshots': [str(p) for p in screenshots],
         'contact_sheet': str(sheet),
+        'display_profile': profile,
+        'viewport': {'width': viewport_w, 'height': viewport_h, 'phone_scale_window': use_phone_scale, 'target_window_size': list(target_window_size) if target_window_size else None},
         'image_quality': quality_results,
         'image_quality_status': 'PASS' if not failed_quality else 'FAIL',
     }

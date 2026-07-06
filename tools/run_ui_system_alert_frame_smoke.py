@@ -20,6 +20,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from danbooru_taxonomy import validate_tags
+from vn_product_config import display_profile, generation_dimensions
 
 DEFAULT_PROJECT_ROOT = Path.cwd()
 WIDTH = 1024
@@ -154,6 +155,8 @@ def main() -> int:
     parser.add_argument('--scene-id', default='ui_system_alert_frame_smoke')
     parser.add_argument('--prompt-shape', default='corner_alert_backdrop', choices=sorted(PROMPT_SHAPES))
     parser.add_argument('--seed', type=int, default=SEED)
+    parser.add_argument('--width', type=int, default=None, help='Output width. Defaults to project display_profile generation_width or legacy 1024.')
+    parser.add_argument('--height', type=int, default=None, help='Output height. Defaults to project display_profile generation_height or legacy 576.')
     parser.add_argument('--contract', default='')
     args = parser.parse_args()
 
@@ -161,6 +164,12 @@ def main() -> int:
     project_root = paths['project_root']
     contract_path = paths['contract_path']
     contract = load_json(contract_path)
+    default_width, default_height = generation_dimensions(contract, fallback_width=WIDTH, fallback_height=HEIGHT)
+    output_width = args.width if args.width is not None else default_width
+    output_height = args.height if args.height is not None else default_height
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('UI_SYSTEM_ALERT_REFUSED: width and height must be positive integers')
+    active_display_profile = display_profile(contract)
     workflow_root = Path(contract['workflow_pack_root'])
     output_root = Path(contract['comfyui_output_root'])
     workflow_path = workflow_root / 'ui_system_alert_frame/ui_system_alert_frame_workflow_api.json'
@@ -177,8 +186,8 @@ def main() -> int:
 
     workflow['3']['inputs']['text'] = positive
     workflow['4']['inputs']['text'] = NEGATIVE
-    workflow['5']['inputs']['width'] = WIDTH
-    workflow['5']['inputs']['height'] = HEIGHT
+    workflow['5']['inputs']['width'] = output_width
+    workflow['5']['inputs']['height'] = output_height
     workflow['6']['inputs']['seed'] = args.seed
     workflow['6']['inputs']['steps'] = STEPS
     workflow['6']['inputs']['cfg'] = CFG
@@ -232,14 +241,15 @@ def main() -> int:
         'prompt_shape': args.prompt_shape,
         'prompt_id': prompt_id,
         'seed': args.seed,
-        'width': WIDTH,
-        'height': HEIGHT,
+        'width': output_width,
+        'height': output_height,
         'steps': STEPS,
         'cfg': CFG,
         'positive': positive,
         'negative': NEGATIVE,
         'workflow_path': str(workflow_path),
         'workflow_sha256': workflow_sha,
+        'display_profile': active_display_profile,
         'taxonomy_source': taxonomy_meta['taxonomy_source'],
         'taxonomy_validation': taxonomy_validation,
         'outputs': copied,

@@ -146,6 +146,62 @@ def build_project_paths(project_root: str | Path | None = None, contract: str | 
     )
 
 
+def display_profile(contract: dict[str, Any]) -> dict[str, Any]:
+    """Return the project display profile, or a safe landscape legacy default.
+
+    Profiles are intentionally data-only: tools may use them for defaults and QA
+    reporting, but should still accept explicit CLI overrides for one-off tests.
+    """
+    profile = contract.get('display_profile')
+    if isinstance(profile, dict):
+        return profile
+    return {
+        'profile_id': 'legacy_landscape_16_9',
+        'status': 'implicit_legacy_default',
+        'aspect_ratio': '16:9',
+        'renpy_width': 1280,
+        'renpy_height': 720,
+        'generation_width': 1024,
+        'generation_height': 576,
+        'phone_scale_qa_required': False,
+    }
+
+
+def _parse_resolution_pair(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, str) or 'x' not in value.lower():
+        return None
+    left, right = value.lower().split('x', 1)
+    try:
+        return int(left.strip()), int(right.strip())
+    except ValueError:
+        return None
+
+
+def generation_dimensions(contract: dict[str, Any], *, fallback_width: int = 1024, fallback_height: int = 576) -> tuple[int, int]:
+    profile = display_profile(contract)
+    parsed = _parse_resolution_pair(profile.get('generation_resolution_primary'))
+    try:
+        width = int(profile.get('generation_width') or (parsed[0] if parsed else fallback_width))
+        height = int(profile.get('generation_height') or (parsed[1] if parsed else fallback_height))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'display_profile generation dimensions must be integers: {profile}') from exc
+    if width <= 0 or height <= 0:
+        raise ValueError(f'display_profile generation dimensions must be positive: {profile}')
+    return width, height
+
+
+def renpy_dimensions(contract: dict[str, Any], *, fallback_width: int = 1280, fallback_height: int = 720) -> tuple[int, int]:
+    profile = display_profile(contract)
+    try:
+        width = int(profile.get('renpy_width') or fallback_width)
+        height = int(profile.get('renpy_height') or fallback_height)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'display_profile RenPy dimensions must be integers: {profile}') from exc
+    if width <= 0 or height <= 0:
+        raise ValueError(f'display_profile RenPy dimensions must be positive: {profile}')
+    return width, height
+
+
 def add_project_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--project-root', default=None, help='Ren\'Py/VN project root. Defaults to VN_AUTOMATION_PROJECT_ROOT or cwd only when cwd has docs/automation/project_contract.json; otherwise fails closed.')
     parser.add_argument('--contract', help='Path to project_contract.json. Defaults to docs/automation/project_contract.json under project root.')

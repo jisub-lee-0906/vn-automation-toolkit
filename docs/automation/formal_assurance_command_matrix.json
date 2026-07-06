@@ -224,5 +224,73 @@
       "tests/test_production_cockpit_roadmap.py::test_production_cockpit_roadmap_requires_explicit_non_goals",
       "tests/test_production_cockpit_roadmap.py::test_production_cockpit_roadmap_refuses_outside_project_roadmap"
     ]
+  },
+  "auto-approve": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Evaluates only project-confined candidate metadata, file QA, vision scorecard, gate report, policy, and optional output path; does not promote or mutate assets itself.",
+    "evidence": [
+      "tests/test_auto_approval_policy.py::test_auto_approve_allows_scene_local_background_when_all_gates_pass",
+      "tests/test_auto_approval_policy.py::test_auto_approve_rejects_hard_blocker_even_when_scores_pass",
+      "tests/test_auto_approval_policy.py::test_auto_approve_requires_human_for_gated_asset_type",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "gameplay-composition-qa": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Reads a project-confined composition QA plan and project-confined screenshots; writes a project-confined JSON report. Does not mutate game assets or scripts.",
+    "evidence": [
+      "tests/test_gameplay_composition_qa.py::test_gameplay_composition_qa_passes_balanced_two_sprite_scene",
+      "tests/test_gameplay_composition_qa.py::test_gameplay_composition_qa_fails_character_intruding_into_textbox",
+      "tests/test_gameplay_composition_qa.py::test_gameplay_composition_qa_fails_missing_expected_character_color",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "vision-composition-qa": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Evaluates a project-confined structured vision composition scorecard and writes a project-confined QA result; does not mutate assets or game scripts.",
+    "evidence": [
+      "tests/test_vision_composition_qa.py::test_vision_composition_qa_passes_low_uncertainty_scorecard",
+      "tests/test_vision_composition_qa.py::test_vision_composition_qa_fails_medium_uncertainty_for_auto_approval",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "scene-story-plan": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Creates a project-confined structured story plan from selected scene context and writes only under project root.",
+    "evidence": [
+      "tests/test_story_asset_automation.py",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "story-qa": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Validates a project-confined story plan and writes a project-confined QA result; does not mutate script/canon.",
+    "evidence": [
+      "tests/test_story_asset_automation.py",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "scene-enrichment-plan": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Converts a project-confined story plan and asset generation policy into project-confined candidate batch plan; does not generate/promote assets.",
+    "evidence": [
+      "tests/test_story_asset_automation.py",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
+  },
+  "enrichment-queue": {
+    "class": "project",
+    "project_selection": "build_project_paths fail-closed selection",
+    "path_policy": "Creates project-confined resolved_asset_requests and prompt_slots from a project-confined scene enrichment plan; writes only under docs/production within the project root.",
+    "evidence": [
+      "tests/test_enrichment_queue.py",
+      "tests/test_formal_assurance_invariants.py::test_cli_exposed_project_commands_use_scope_guards_or_are_classified"
+    ]
   }
 }

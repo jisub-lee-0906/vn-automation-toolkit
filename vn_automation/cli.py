@@ -35,6 +35,13 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'obsidian-summarize': ('summarize_obsidian_readability_indexes.py', 'Generate reader-facing Obsidian timeline/seed/emotional-arc indexes.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
     'roadmap': ('validate_production_cockpit_roadmap.py', 'Validate the human-supervised VN production cockpit roadmap.'),
+    'auto-approve': ('auto_approve_candidate.py', 'Evaluate policy-based delegated auto-approval for generated VN asset candidates.'),
+    'gameplay-composition-qa': ('gameplay_composition_qa.py', 'Validate VN gameplay screenshot composition: sprite placement, scale, textbox overlap, and basic background harmony.'),
+    'vision-composition-qa': ('vision_composition_qa.py', 'Validate structured vision composition scorecards for VN auto-approval.'),
+    'scene-story-plan': ('scene_story_plan.py', 'Create a structured VN scene story plan with asset opportunities.'),
+    'story-qa': ('story_qa.py', 'Validate VN story plan canon/voice/emotion/reward gates.'),
+    'scene-enrichment-plan': ('scene_enrichment_plan.py', 'Convert a story plan into proactive asset candidate batches.'),
+    'enrichment-queue': ('enrichment_queue.py', 'Create resolved generation queue and prompt slots from a scene enrichment plan.'),
 
 }
 

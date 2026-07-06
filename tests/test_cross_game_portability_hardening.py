@@ -259,6 +259,7 @@ def test_capture_plan_rejects_unsafe_pre_capture_actions(tmp_path: Path):
                 {'type': 'click', 'x': 1.5, 'y': 0.5},
                 {'type': 'wait', 'seconds': 99},
             ],
+            'advance': 999,
         }],
     }), encoding='utf-8')
 
@@ -270,6 +271,7 @@ def test_capture_plan_rejects_unsafe_pre_capture_actions(tmp_path: Path):
 
     assert 'click x must be normalized 0..1' in text
     assert 'seconds must be between' in text
+    assert 'advance must be between' in text
 
 
 def test_capture_plan_validates_expected_menu_choices_at_warp(tmp_path: Path):
@@ -410,6 +412,23 @@ def test_capture_plan_rejects_malformed_warp_and_too_many_captures(tmp_path: Pat
     report = report_path.read_text(encoding='utf-8') if report_path.exists() else proc.stdout + proc.stderr
     assert 'too many captures' in report
     assert 'warp line must be positive integer' in report
+
+
+
+def test_capture_scene_converts_advance_field_to_enter_actions():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location('capture_scene_under_test', TOOLS / 'capture_scene_contact_sheet.py')
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    actions = module.capture_actions({'advance': 3, 'pre_capture_actions': [{'type': 'wait', 'seconds': 0.5}]})
+
+    assert actions == [
+        {'type': 'key', 'key': 'enter', 'repeat': 3, 'interval_seconds': 0.15},
+        {'type': 'wait', 'seconds': 0.5},
+    ]
 
 
 

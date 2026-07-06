@@ -167,6 +167,14 @@ def validate_capture_plan(plan_path: Path, scene_id: str, project_root: Path) ->
             else:
                 if not (0 <= wait <= MAX_WAIT_SECONDS):
                     errors.append(f'captures[{idx}] wait_seconds must be between 0 and {MAX_WAIT_SECONDS}')
+            if 'advance' in cap:
+                try:
+                    advance = int(cap['advance'])
+                except Exception:
+                    errors.append(f'captures[{idx}] advance must be integer')
+                    advance = 0
+                if not (0 <= advance <= MAX_ACTION_REPEAT):
+                    errors.append(f'captures[{idx}] advance must be between 0 and {MAX_ACTION_REPEAT}')
             actions = cap.get('pre_capture_actions', [])
             if actions is None:
                 actions = []

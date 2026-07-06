@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 from danbooru_taxonomy import validate_tags
-from vn_product_config import build_project_paths, require_under
+from vn_product_config import build_project_paths, display_profile, generation_dimensions, require_under
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -161,12 +161,12 @@ def resolve_scene_event_route_mode(cli_route_mode: str | None, prompt_slots_data
 # Exact quality/subject wrapper from scene_event_cg/README.md, with creative scene context supplied by agent-authored slots.
 README_POSITIVE = (
     "masterpiece, best_quality, amazing_quality, 4k, very_aesthetic, high_resolution, "
-    "ultra-detailed, absurdres, newest, 1girl, solo, {character_features}, "
+    "ultra-detailed, absurdres, newest, {character_features}, "
     "{outfit_detail}, {scene_context}, depth_of_field"
 )
 
-WIDTH = 1024
-HEIGHT = 576
+DEFAULT_WIDTH = 1024
+DEFAULT_HEIGHT = 576
 STEPS = 30
 CFG = 5.2
 DENOISE = 1.0
@@ -312,6 +312,8 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument('--prepare-only', action='store_true', help='Patch workflow and write metadata without submitting to ComfyUI.')
     parser.add_argument('--allow-review-gated-execution', action='store_true', help='Allow prompt slots with executable=false. Use only after explicit owner approval and validated reference/preflight workflow.')
+    parser.add_argument('--width', type=int, default=None, help='Output width for the EmptyLatentImage node. Defaults to project display_profile generation_width, or legacy 1024.')
+    parser.add_argument('--height', type=int, default=None, help='Output height for the EmptyLatentImage node. Defaults to project display_profile generation_height, or legacy 576.')
     parser.add_argument(
         '--route-mode',
         choices=sorted(SCENE_EVENT_ROUTE_ALLOWED_NEGATIVE_REMOVALS),
@@ -323,6 +325,13 @@ def main() -> int:
 
     project_paths = build_project_paths(args.project_root, None)
     project_root = project_paths.project_root
+    default_width, default_height = generation_dimensions(project_paths.contract, fallback_width=DEFAULT_WIDTH, fallback_height=DEFAULT_HEIGHT)
+    output_width = args.width if args.width is not None else default_width
+    output_height = args.height if args.height is not None else default_height
+    if output_width <= 0 or output_height <= 0:
+        print('SCENE_EVENT_CG_REFUSED: width and height must be positive integers')
+        return 2
+    active_display_profile = display_profile(project_paths.contract)
     if args.out_metadata:
         try:
             require_under(Path(args.out_metadata).expanduser().resolve(), project_root, 'out-metadata')
@@ -380,8 +389,8 @@ def main() -> int:
     workflow["100"]["inputs"]["strength_clip"] = LORA_STRENGTH_CLIP
     workflow["9"]["inputs"]["text"] = positive
     workflow["10"]["inputs"]["text"] = negative
-    workflow["11"]["inputs"]["width"] = WIDTH
-    workflow["11"]["inputs"]["height"] = HEIGHT
+    workflow["11"]["inputs"]["width"] = output_width
+    workflow["11"]["inputs"]["height"] = output_height
     workflow["12"]["inputs"]["seed"] = seed
     workflow["12"]["inputs"]["steps"] = STEPS
     workflow["12"]["inputs"]["cfg"] = CFG
@@ -444,8 +453,9 @@ def main() -> int:
             "route_allowed_negative_removals": sorted(SCENE_EVENT_ROUTE_ALLOWED_NEGATIVE_REMOVALS[route_mode]),
             "seed": seed,
             "same_seed_as_char_base": seed == int(char_meta.get("seed")),
-            "width": WIDTH,
-            "height": HEIGHT,
+            "display_profile": active_display_profile,
+            "width": output_width,
+            "height": output_height,
             "steps": STEPS,
             "cfg": CFG,
             "denoise": DENOISE,
@@ -522,8 +532,9 @@ def main() -> int:
         "route_allowed_negative_removals": sorted(SCENE_EVENT_ROUTE_ALLOWED_NEGATIVE_REMOVALS[route_mode]),
         "seed": seed,
         "same_seed_as_char_base": seed == int(char_meta.get("seed")),
-        "width": WIDTH,
-        "height": HEIGHT,
+        "display_profile": active_display_profile,
+        "width": output_width,
+        "height": output_height,
         "steps": STEPS,
         "cfg": CFG,
         "denoise": DENOISE,

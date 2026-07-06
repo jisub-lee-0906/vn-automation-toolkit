@@ -26,6 +26,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from danbooru_taxonomy import validate_tags
+from vn_product_config import build_project_paths, display_profile, generation_dimensions
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -314,11 +315,20 @@ def main() -> int:
     parser.add_argument('--scene-id', default='')
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument('--prompt-slots', help='Agent-authored prompt slots JSON. Required for production scene_prop_cg generation.')
+    parser.add_argument('--width', type=int, default=None, help='Output width. Defaults to project display_profile generation_width or legacy 1024.')
+    parser.add_argument('--height', type=int, default=None, help='Output height. Defaults to project display_profile generation_height or legacy 576.')
     args = parser.parse_args()
     seed = args.seed
-    project_root = Path(args.project_root)
-    contract_path = project_root / 'docs/automation/project_contract.json'
-    runs_root = project_root / 'docs/automation/generation_runs'
+    project_paths = build_project_paths(args.project_root, None)
+    project_root = project_paths.project_root
+    contract_path = project_paths.contract_file
+    runs_root = project_paths.generation_runs_root
+    default_width, default_height = generation_dimensions(project_paths.contract, fallback_width=WIDTH, fallback_height=HEIGHT)
+    output_width = args.width if args.width is not None else default_width
+    output_height = args.height if args.height is not None else default_height
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('SCENE_PROP_CG_REFUSED: width and height must be positive integers')
+    active_display_profile = display_profile(project_paths.contract)
     prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
     if prompt_slots_path is None:
         raise RuntimeError('UNROUTED_SCENE_PROP_CG: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
@@ -355,8 +365,8 @@ def main() -> int:
 
     workflow["3"]["inputs"]["text"] = positive
     workflow["4"]["inputs"]["text"] = negative
-    workflow["5"]["inputs"]["width"] = WIDTH
-    workflow["5"]["inputs"]["height"] = HEIGHT
+    workflow["5"]["inputs"]["width"] = output_width
+    workflow["5"]["inputs"]["height"] = output_height
     workflow["6"]["inputs"]["seed"] = seed
     workflow["6"]["inputs"]["steps"] = STEPS
     workflow["6"]["inputs"]["cfg"] = CFG
@@ -430,10 +440,11 @@ def main() -> int:
         "positive_prompt": positive,
         "negative_prompt": negative,
         "seed": seed,
-        "width": WIDTH,
-        "height": HEIGHT,
+        "width": output_width,
+        "height": output_height,
         "steps": STEPS,
         "cfg": CFG,
+        "display_profile": active_display_profile,
         "output_paths": [str(p) for p in output_paths],
         "candidate_copies": [str(p) for p in copied_paths],
         "qa_status": "pending_visual_review",

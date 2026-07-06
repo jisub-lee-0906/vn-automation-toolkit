@@ -19,6 +19,11 @@ from scene_event_cg_policy import build_reference_conditioning_request, build_sc
 from create_scene_event_cg_prompt_slots import DEFAULT_CHARACTER_FEATURES, DEFAULT_OUTFIT_DETAIL, DEFAULT_SCENE_CONTEXT, parse_tags
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = Path(__file__).resolve().parent
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+from vn_product_config import build_project_paths, display_profile, generation_dimensions
 RUNNER = ROOT / 'tools/run_scene_event_cg_smoke.py'
 
 
@@ -90,13 +95,22 @@ def main() -> int:
     parser.add_argument('--reference-conditioning-mode', default='none')
     parser.add_argument('--reference-assets', default='', help='Comma-separated reference asset paths, confined under project root')
     parser.add_argument('--reference-reason', default='')
+    parser.add_argument('--width', type=int, default=None, help='Output width passed to run_scene_event_cg_smoke.py. Defaults to project display_profile generation_width.')
+    parser.add_argument('--height', type=int, default=None, help='Output height passed to run_scene_event_cg_smoke.py. Defaults to project display_profile generation_height.')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--prepare-only', action='store_true', help='Call runner with --prepare-only instead of live generation')
     parser.add_argument('--output', help='Optional batch summary path')
     parser.add_argument('--allow-generic-fixture-defaults', action='store_true', help='Allow Unit 10 generic schoolgirl/auditorium fixture defaults. Unsafe for production unless explicitly requested.')
     args = parser.parse_args()
 
-    project_root = Path(args.project_root).resolve()
+    project_paths = build_project_paths(args.project_root, None)
+    project_root = project_paths.project_root
+    default_width, default_height = generation_dimensions(project_paths.contract, fallback_width=1024, fallback_height=576)
+    output_width = args.width if args.width is not None else default_width
+    output_height = args.height if args.height is not None else default_height
+    active_display_profile = display_profile(project_paths.contract)
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('SCENE_EVENT_BATCH_REFUSED: width and height must be positive integers')
     seeds = parse_seeds(args.seeds)
     asset_id_prefix = slugify_asset_id(args.asset_id_prefix)
     batch_root = require_under(project_root / 'docs/automation/batches', project_root, 'batch_root')
@@ -147,6 +161,10 @@ def main() -> int:
             str(prompt_slots_path),
             '--seed',
             str(seed),
+            '--width',
+            str(output_width),
+            '--height',
+            str(output_height),
         ]
         if args.dry_run or args.prepare_only:
             command.append('--prepare-only')
@@ -163,6 +181,8 @@ def main() -> int:
             'executable': prompt_slots.get('executable'),
             'reference_conditioning': prompt_slots.get('reference_conditioning'),
             'scene_event_route_mode': prompt_slots['scene_event_route_mode'],
+            'width': output_width,
+            'height': output_height,
             'prompt_slots': str(prompt_slots_path),
             'command': command,
             'status': 'dry_run' if args.dry_run else 'pending',
@@ -203,7 +223,10 @@ def main() -> int:
         'framing': args.framing,
         'dry_run': args.dry_run,
         'prepare_only': args.prepare_only,
+        'width': output_width,
+        'height': output_height,
         'items': items,
+        'display_profile': active_display_profile,
         'promotion_status': 'not_promoted_pending_owner_approval',
     }
     output.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

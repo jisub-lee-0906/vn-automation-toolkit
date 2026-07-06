@@ -10,8 +10,29 @@ BATCH_SCRIPT = ROOT / 'tools/run_scene_event_cg_batch.py'
 SHEET_SCRIPT = ROOT / 'tools/make_event_cg_contact_sheet.py'
 
 
+def make_project(project: Path) -> Path:
+    (project / 'docs/automation').mkdir(parents=True, exist_ok=True)
+    (project / 'game/data').mkdir(parents=True, exist_ok=True)
+    workflow = project / 'workflow_pack'
+    workflow.mkdir(parents=True, exist_ok=True)
+    (workflow / 'WORKFLOW_INDEX.json').write_text(json.dumps({'workflows': []}), encoding='utf-8')
+    (project / 'game/data/asset_manifest.json').write_text(json.dumps({'assets': []}), encoding='utf-8')
+    (project / 'docs/automation/project_contract.json').write_text(json.dumps({
+        'project_root': str(project),
+        'renpy_project_root': str(project),
+        'renpy_game_dir': str(project / 'game'),
+        'manifest_path': str(project / 'game/data/asset_manifest.json'),
+        'workflow_pack_root': str(workflow),
+        'workflow_index': str(workflow / 'WORKFLOW_INDEX.json'),
+        'generation_runs_root': str(project / 'docs/automation/generation_runs'),
+        'generated_candidates_root': str(project / 'docs/automation/generated_candidates'),
+        'promotion_log_root': str(project / 'docs/production/promotions'),
+    }), encoding='utf-8')
+    return project
+
+
 def test_scene_event_cg_batch_dry_run_creates_prompt_slots_and_summary(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     (project / 'docs/production/prompt_slots').mkdir(parents=True)
     char_meta = project / 'docs/automation/generation_runs/char_base/metadata.json'
     char_meta.parent.mkdir(parents=True)
@@ -61,7 +82,7 @@ def test_scene_event_cg_batch_dry_run_creates_prompt_slots_and_summary(tmp_path:
 
 
 def test_scene_event_cg_batch_fails_without_project_specific_tags(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     char_meta = project / 'docs/automation/generation_runs/char_base/metadata.json'
     char_meta.parent.mkdir(parents=True)
     char_meta.write_text(json.dumps({'run_id': 'char_base'}), encoding='utf-8')
@@ -77,7 +98,7 @@ def test_scene_event_cg_batch_fails_without_project_specific_tags(tmp_path: Path
 
 
 def test_scene_event_cg_batch_confines_asset_id_and_output_paths(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     char_meta = project / 'docs/automation/generation_runs/char_base/metadata.json'
     char_meta.parent.mkdir(parents=True)
     char_meta.write_text(json.dumps({'run_id': 'char_base'}), encoding='utf-8')
@@ -98,7 +119,7 @@ def test_scene_event_cg_batch_confines_asset_id_and_output_paths(tmp_path: Path)
 
 
 def test_scene_event_cg_batch_writes_multichar_reference_preflight_prompt_slots(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     char_meta = project / 'docs/automation/generation_runs/char_base/metadata.json'
     char_meta.parent.mkdir(parents=True)
     char_meta.write_text(json.dumps({'run_id': 'char_base', 'seed': 123}), encoding='utf-8')
@@ -142,7 +163,7 @@ def test_scene_event_cg_batch_writes_multichar_reference_preflight_prompt_slots(
 
 
 def test_make_event_cg_contact_sheet_from_batch_summary(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     img_dir = project / 'docs/automation/generated_candidates/event_cg/run_a'
     img_dir.mkdir(parents=True)
     img = img_dir / 'candidate_01.png'
@@ -181,7 +202,7 @@ def test_make_event_cg_contact_sheet_from_batch_summary(tmp_path: Path):
 
 
 def test_make_event_cg_contact_sheet_flags_blank_black_and_low_variance(tmp_path: Path):
-    project = tmp_path / 'game'
+    project = make_project(tmp_path / 'game')
     img_dir = project / 'docs/automation/generated_candidates/event_cg/run_black'
     img_dir.mkdir(parents=True)
     black = img_dir / 'black.png'

@@ -151,7 +151,7 @@ The machine-readable command classification lives in:
 docs/automation/formal_assurance_command_matrix.json
 ```
 
-Every command exposed by `vn_automation.cli.COMMANDS` must be present in this matrix. Static tests enforce that project-class commands include an explicit scope-guard marker and that project-root globs are paired with traversal validation and per-match confinement checks.
+Every command exposed by `vn_automation.cli.COMMANDS` must be present in this matrix, including policy-only gates such as `auto-approve`. Static tests enforce that project-class commands include an explicit scope-guard marker and that project-root globs are paired with traversal validation and per-match confinement checks.
 
 Command coverage summary:
 
@@ -180,6 +180,13 @@ Command coverage summary:
 - `obsidian-summarize` — project command that generates title-scoped reader-facing Obsidian timeline/seed/emotional-arc indexes and a confined JSON summary.
 - `director` — project command with explicit project root; Hermes media cache is intentional external delivery cache. Director is intentionally documented as a UX/orchestration command with targeted `require_under` checks rather than the uniform central `build_project_paths()` pattern used by most project commands.
 - `roadmap` — project command that validates a project-confined human-supervised production cockpit roadmap, including explicit anti-auto-promote/non-global-replacement goals and existing evidence links.
+- `auto-approve` — project command that evaluates policy-based delegated auto-approval from project-confined metadata, QA, scorecard, gate report, and policy without mutating assets.
+- `gameplay-composition-qa` — project command that validates project-confined gameplay screenshots for coarse VN composition failures: sprite placement/scale, textbox overlap, inter-character overlap, and basic background luma/detail.
+- `vision-composition-qa` — project command that validates project-confined structured vision composition scorecards for scene purpose, visual focus, character placement/scale, textbox safety, background harmony, continuity, blockers, and low uncertainty before delegated auto-approval.
+- `scene-story-plan` — project command that writes a project-confined structured story plan with beats, QA targets, choices, and asset opportunities.
+- `story-qa` — project command that validates project-confined story plans for canon/voice/emotion/reward/repetition/asset-opportunity gates without mutating game scripts.
+- `scene-enrichment-plan` — project command that turns a story plan plus asset generation policy into project-confined proactive candidate batch plans without generating or promoting assets.
+- `enrichment-queue` — project command that writes project-confined resolved generation requests and prompt slots from a scene enrichment plan; it does not promote assets and source-metadata-gated assets remain held.
 
 ## Out of Scope
 

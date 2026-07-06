@@ -454,6 +454,181 @@ def write_writeback_manifest(project_root: Path, written: list[str], *, force: b
     }, written, force=force)
 
 
+def make_director_profile(title: str, slug: str) -> dict[str, Any]:
+    return {
+        'profile_version': '1.0',
+        'game_slug': slug,
+        'game_title': title,
+        'creative_direction': {
+            'genre': 'pending owner direction',
+            'tone': ['pending'],
+            'visual_palette': ['pending'],
+            'target_display': 'mobile portrait 9:16 by default unless owner chooses otherwise',
+            'composition': ['textbox-safe', 'sprite-safe', 'scene purpose first'],
+        },
+        'priorities': [
+            'scene purpose over raw prettiness',
+            'title-specific continuity over cross-game reuse',
+            'stable VN readability over flashy overlays',
+            'explicit approval or auto_approval_policy gate before promotion',
+        ],
+        'avoid': [
+            'fake UI text unless the asset is a textless UI frame with RenPy overlay text',
+            'watermarks/signatures',
+            'cross-game production asset reuse',
+            'global replacements before scene-local proof',
+        ],
+        'asset_judgment_weights': {
+            'semantic_fit': 0.35,
+            'artifact_absence': 0.25,
+            'mobile_composition': 0.20,
+            'style_continuity': 0.15,
+            'novelty': 0.05,
+        },
+        'auto_approval_intent': {
+            'scene_local_background_replacement': 'AI may select/promote/integrate when policy and all gates pass.',
+            'character_identity': 'human gate',
+            'event_cg': 'human gate',
+            'main_ui_identity': 'human gate',
+        },
+    }
+
+
+def make_auto_approval_policy(slug: str) -> dict[str, Any]:
+    return {
+        'policy_version': '1.0',
+        'scope': slug,
+        'default_mode': 'delegated_auto_with_gates',
+        'asset_type_rules': {
+            'scene_local_background_replacement': {
+                'auto_approve': True,
+                'allowed_scope': 'scene_local',
+                'asset_types': ['background'],
+                'requires_scene_local': True,
+                'description': 'Allow AI/delegated auto-selection, promotion, and scene-local integration for non-character location backgrounds replacing placeholders/legacy crops when all gates pass.',
+                'min_scores': {
+                    'semantic_fit': 4,
+                    'mobile_portrait_composition': 4,
+                    'textbox_safety': 4,
+                    'artifact_absence': 4,
+                    'scene_purpose_fit': 4,
+                    'style_continuity': 3,
+                },
+            },
+            'minor_audio_polish': {
+                'auto_approve': True,
+                'allowed_scope': 'scene_local_or_existing_audio_slot',
+                'asset_types': ['audio', 'sfx', 'bgm'],
+                'description': 'Allow minor dialogue-friendly VN loop/SFX candidates when technical audio QA and scorecard pass.',
+                'min_scores': {'semantic_fit': 4, 'artifact_absence': 4, 'scene_purpose_fit': 4},
+            },
+            'scene_local_prop_cutin': {
+                'auto_approve': False,
+                'allowed_scope': 'scene_local',
+                'asset_types': ['prop', 'prop_cg'],
+                'description': 'Generate/QA automatically, but require human review unless exact-run delegation is recorded.',
+            },
+        },
+        'human_gate_asset_types': [
+            'character_base',
+            'main_sprite_identity',
+            'char_expression',
+            'event_cg',
+            'main_ui_identity',
+            'ui_system_alert_frame',
+            'title_screen',
+            'major_story_rewrite',
+        ],
+        'hard_rejects': [
+            'fake dialogue box',
+            'readable fake text',
+            'watermark',
+            'signature',
+            'unexpected humans in background',
+            'wrong aspect ratio',
+            'cross-game production asset reuse',
+            'layout overflow',
+            'missing file',
+        ],
+        'required_gates_for_auto_promotion': [
+            'file_qa_pass',
+            'vision_scorecard_pass',
+            'renpy_lint_pass',
+            'toolkit_validate_pass',
+            'scene_guard_pass',
+            'gameplay_capture_pass',
+            'gameplay_composition_qa_pass',
+            'vision_composition_scorecard_pass',
+            'obsidian_audit_pass',
+            'rollback_point_exists',
+        ],
+    }
+
+
+
+def make_asset_generation_policy() -> dict[str, Any]:
+    return {
+        'policy_version': '1.0',
+        'default_generation_mode': 'proactive_variety',
+        'minimum_candidate_counts': {
+            'background': 3,
+            'bgm': 2,
+            'sfx': 3,
+            'prop_cg': 3,
+            'event_cg': 2,
+            'char_expression': 2,
+        },
+        'promotion_policy': 'approval_gated',
+        'reuse_policy': {
+            'reuse_allowed_for': ['same_game_identity_anchor', 'same_location_continuity', 'approved_ui_identity'],
+            'reuse_discouraged_for': ['branch_background', 'clue_prop', 'event_cg', 'scene_bgm', 'scene_sfx'],
+        },
+        'principle': 'Generate candidates liberally; promote/integrate only through strict gates.',
+    }
+
+
+def make_story_automation_policy() -> dict[str, Any]:
+    return {
+        'policy_version': '1.0',
+        'mode': 'supervised_director_story_automation',
+        'candidate_generation': 'liberal_multi_beat',
+        'canon_integration': 'qa_gated',
+        'required_story_gates': ['canon_fit', 'character_voice', 'emotional_progression', 'player_reward', 'asset_opportunities', 'repetition_risk'],
+        'human_gate_story_changes': ['major_story_rewrite', 'character_motivation_change', 'route_ending_change', 'canon_retcon'],
+        'principle': 'Generate beat/dialogue/choice candidates proactively; integrate only after canon, voice, emotion, and continuity QA.',
+    }
+
+def make_vision_scorecard_schema() -> dict[str, Any]:
+    return {
+        '$schema': 'https://json-schema.org/draft/2020-12/schema',
+        'title': 'VN Vision Scorecard',
+        'type': 'object',
+        'required': ['asset_id', 'semantic_fit', 'mobile_portrait_composition', 'textbox_safety', 'artifact_absence', 'scene_purpose_fit', 'promotion_blocker'],
+        'properties': {
+            'asset_id': {'type': 'string'},
+            'candidate_id': {'type': 'string'},
+            'semantic_fit': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'mobile_portrait_composition': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'textbox_safety': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'artifact_absence': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'scene_purpose_fit': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'style_continuity': {'type': 'number', 'minimum': 1, 'maximum': 5},
+            'promotion_blocker': {'type': 'boolean'},
+            'recommendation': {'type': 'string'},
+            'observed_issues': {'type': 'array', 'items': {'type': 'string'}},
+            'caveats': {'type': 'array', 'items': {'type': 'string'}},
+        },
+    }
+
+
+def write_autonomy_policy_files(project_root: Path, title: str, slug: str, written: list[str], *, force: bool) -> None:
+    write_json(project_root / 'docs/automation/director_profile.json', make_director_profile(title, slug), written, force=force)
+    write_json(project_root / 'docs/automation/auto_approval_policy.json', make_auto_approval_policy(slug), written, force=force)
+    write_json(project_root / 'docs/automation/asset_generation_policy.json', make_asset_generation_policy(), written, force=force)
+    write_json(project_root / 'docs/automation/story_automation_policy.json', make_story_automation_policy(), written, force=force)
+    write_json(project_root / 'docs/automation/vision_scorecard.schema.json', make_vision_scorecard_schema(), written, force=force)
+
+
 def run_tool(script: str, *args: str) -> tuple[int, str]:
     proc = subprocess.run([sys.executable, str(TOOLS / script), *args], cwd=ROOT, text=True, capture_output=True)
     return proc.returncode, proc.stdout + proc.stderr
@@ -519,6 +694,7 @@ def bootstrap(args: argparse.Namespace) -> int:
         return init_rc
 
     obs_scene = write_obsidian(obs_root, args.title, slug, project_root, written, force=args.force)
+    write_autonomy_policy_files(project_root, args.title, slug, written, force=args.force)
     write_json(project_root / 'docs/automation/production_cockpit_roadmap.json', make_roadmap(args.title, slug, obs_scene), written, force=args.force)
     bootstrap_scene_state(project_root, obs_scene, written, args.force)
     write_writeback_manifest(project_root, written, force=args.force)

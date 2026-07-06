@@ -62,8 +62,22 @@ def label_for(item: dict) -> str:
     return ' '.join(pieces)[:46]
 
 
-def make_sheet(items: list[dict], output: Path, *, crop: bool = False, cols: int = 4) -> None:
-    thumb = (320, 180) if not crop else (220, 220)
+def aspect_profile(batch_data: dict) -> str:
+    profile = batch_data.get('display_profile') or {}
+    if isinstance(profile, dict):
+        return str(profile.get('aspect_ratio') or profile.get('profile_id') or '')
+    return ''
+
+
+def expected_aspect_bounds(batch_data: dict) -> tuple[float, float]:
+    profile = aspect_profile(batch_data)
+    if '9:16' in profile or 'portrait' in profile:
+        return (0.45, 0.85)
+    return (1.2, 2.2)
+
+
+def make_sheet(items: list[dict], output: Path, *, crop: bool = False, cols: int = 4, portrait: bool = False) -> None:
+    thumb = ((220, 390) if portrait and not crop else (320, 180)) if not crop else (220, 220)
     pad = 12
     label_h = 36
     rows = (len(items) + cols - 1) // cols
@@ -101,6 +115,7 @@ def image_sanity_warnings(path: Path) -> list[dict]:
 
 
 def build_qa_summary(batch_data: dict, items: list[dict], output: Path, face_output: Path) -> dict:
+    min_ratio, max_ratio = expected_aspect_bounds(batch_data)
     all_items = batch_data.get('items') or []
     candidate_dimensions = []
     warnings = []
@@ -110,13 +125,16 @@ def build_qa_summary(batch_data: dict, items: list[dict], output: Path, face_out
             width, height = im.size
         if width < 256 or height < 144:
             warnings.append({'candidate': str(path), 'warning': 'too_small'})
-        if width / max(height, 1) < 1.2 or width / max(height, 1) > 2.2:
-            warnings.append({'candidate': str(path), 'warning': 'wrong_aspect_ratio'})
+        ratio = width / max(height, 1)
+        if ratio < min_ratio or ratio > max_ratio:
+            warnings.append({'candidate': str(path), 'warning': 'wrong_aspect_ratio', 'ratio': round(ratio, 4), 'expected_bounds': [min_ratio, max_ratio]})
         warnings.extend(image_sanity_warnings(path))
         candidate_dimensions.append({'candidate': str(path), 'width': width, 'height': height})
     return {
         'image_count': len(items),
         'missing_candidate_count': max(0, len(all_items) - len(items)),
+        'aspect_profile': aspect_profile(batch_data),
+        'expected_aspect_bounds': [min_ratio, max_ratio],
         'candidate_dimensions': candidate_dimensions,
         'face_crop_generated': face_output.exists(),
         'contact_sheet': str(output),
@@ -138,9 +156,10 @@ def main() -> int:
     output = Path(args.output).resolve()
     batch_data = load_batch(batch_summary)
     items = load_items(batch_summary)
-    make_sheet(items, output, crop=False, cols=args.cols)
+    portrait = '9:16' in aspect_profile(batch_data) or 'portrait' in aspect_profile(batch_data)
+    make_sheet(items, output, crop=False, cols=args.cols, portrait=portrait)
     face_output = output.with_name(output.stem + '_face' + output.suffix)
-    make_sheet(items, face_output, crop=True, cols=args.cols)
+    make_sheet(items, face_output, crop=True, cols=args.cols, portrait=portrait)
     qa_output = output.with_name(output.stem + '_qa_summary.json')
     qa_output.write_text(json.dumps(build_qa_summary(batch_data, items, output, face_output), ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f'CONTACT_SHEET {output}')
