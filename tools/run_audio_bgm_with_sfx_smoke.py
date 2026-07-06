@@ -101,6 +101,40 @@ def prompt_slots_path_for(project_root: Path, asset_id: str, scene_id: str) -> P
     return None
 
 
+def validate_bgm_prompt_and_runtime(slots: dict[str, Any], prompt: str, steps: int, cfg: float, sampler_name: str, scheduler: str) -> list[str]:
+    """Fail-closed guard for ordinary Stable Audio 3 Medium VN BGM requests.
+
+    SA3 Medium + LCM behaves best for VN BGM with the workflow README production
+    brief and low CFG/step defaults. Allow deliberate experiments only with an
+    explicit allow_nondefault_audio_runtime prompt-slot flag.
+    """
+    allow = bool(slots.get('allow_nondefault_audio_runtime') or slots.get('allow_experimental_audio_runtime'))
+    warnings: list[str] = []
+    if allow:
+        return warnings
+    low = prompt.lower()
+    required_phrases = [
+        'instrumental visual novel background music',
+        'no vocals',
+        'no singing',
+        'no lyrics',
+        'dialogue friendly',
+        'loopable',
+    ]
+    missing = [phrase for phrase in required_phrases if phrase not in low]
+    if missing:
+        warnings.append('BGM prompt missing SA3 VN-BGM required phrases: ' + ', '.join(missing))
+    if steps != 8:
+        warnings.append(f'BGM steps must be 8 for default SA3 Medium LCM route unless explicitly overridden: {steps}')
+    if abs(cfg - 1.0) > 1e-6:
+        warnings.append(f'BGM cfg must be 1.0 for default SA3 Medium LCM route unless explicitly overridden: {cfg}')
+    if sampler_name != 'lcm':
+        warnings.append(f'BGM sampler_name must be lcm unless explicitly overridden: {sampler_name}')
+    if scheduler != 'simple':
+        warnings.append(f'BGM scheduler must be simple unless explicitly overridden: {scheduler}')
+    return warnings
+
+
 def load_audio_prompt_slots(path: Path, asset_id: str, asset_type: str) -> dict[str, Any]:
     data = load_json(path)
     workflow_id = data.get('workflow_id')
@@ -258,6 +292,12 @@ def prepare_workflow(
     cfg = float(slots.get('cfg') or 1.0)
     sampler_name = str(slots.get('sampler_name') or 'lcm')
     scheduler = str(slots.get('scheduler') or 'simple')
+    if asset_type == 'bgm':
+        guard_errors = validate_bgm_prompt_and_runtime(
+            slots, prompt_slot_values['positive_prompt'], steps, cfg, sampler_name, scheduler
+        )
+        if guard_errors:
+            raise RuntimeError('SA3_BGM_PROMPT_RUNTIME_GUARD: ' + '; '.join(guard_errors))
     filename_prefix = f'audio_bgm_with_sfx/{run_id}_{asset_slug}'
 
     workflow['52:31']['inputs']['value'] = prompt_slot_values['positive_prompt']

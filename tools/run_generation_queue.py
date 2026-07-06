@@ -22,11 +22,14 @@ from vn_product_config import build_project_paths, require_under, resolve_projec
 DEFAULT_RUNNERS = {
     'audio_bgm_with_sfx': f'{sys.executable} {TOOLS / "run_audio_bgm_with_sfx_smoke.py"}',
     'char_base': f'{sys.executable} {TOOLS / "run_char_base_smoke.py"}',
+    'char_alpha': f'{sys.executable} {TOOLS / "run_char_alpha_smoke.py"}',
+    'char_expression': f'{sys.executable} {TOOLS / "run_char_expression_smoke.py"}',
     'scene_background': f'{sys.executable} {TOOLS / "run_scene_background_smoke.py"}',
     'scene_event_cg': f'{sys.executable} {TOOLS / "run_scene_event_cg_smoke.py"}',
     'scene_prop_cg': f'{sys.executable} {TOOLS / "run_scene_prop_cg_smoke.py"}',
+    'ui_system_alert_frame': f'{sys.executable} {TOOLS / "run_ui_system_alert_frame_smoke.py"}',
 }
-PROMPT_SENSITIVE_WORKFLOWS = {'scene_background', 'scene_event_cg', 'scene_prop_cg', 'char_base', 'audio_bgm_with_sfx'}
+PROMPT_SENSITIVE_WORKFLOWS = {'scene_background', 'scene_event_cg', 'scene_prop_cg', 'char_base', 'char_expression', 'audio_bgm_with_sfx'}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -68,6 +71,7 @@ def collect_generate_items(project_root: Path, resolved_glob: str) -> list[dict[
                 'prompt_slots_path': item.get('prompt_slots_path'),
                 'prompt_slots': item.get('prompt_slots'),
                 'source_char_base_metadata': item.get('source_char_base_metadata') or item.get('char_base_metadata') or item.get('char_base_metadata_path'),
+                'scene_event_route_mode': item.get('scene_event_route_mode') or item.get('event_cg_route_mode') or item.get('route_mode'),
                 'recommended_audio_role': item.get('recommended_audio_role'),
                 'recommended_prompt_shape': item.get('recommended_prompt_shape'),
                 'recommended_audio_mode': item.get('recommended_audio_mode'),
@@ -159,6 +163,15 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str, runne
         command += ['--prompt-slots', str(prompt_slots_path)]
     if workflow_id == 'audio_bgm_with_sfx' and item.get('asset_type'):
         command += ['--asset-type', str(item.get('asset_type'))]
+    if workflow_id == 'ui_system_alert_frame':
+        prompt_shape = item.get('recommended_prompt_shape') or item.get('prompt_shape')
+        if not prompt_shape:
+            return {
+                **item,
+                'status': 'failed_missing_prompt_shape',
+                'reason': 'ui_system_alert_frame_requires_recommended_prompt_shape',
+            }
+        command += ['--prompt-shape', str(prompt_shape)]
     if workflow_id == 'scene_event_cg':
         source_char_base_metadata = item.get('source_char_base_metadata')
         if not source_char_base_metadata:
@@ -168,6 +181,21 @@ def run_one(project_root: Path, item: dict[str, Any], runner_command: str, runne
                 'reason': 'scene_event_cg_requires_source_char_base_metadata',
             }
         command += ['--char-base-metadata', str(source_char_base_metadata)]
+        if item.get('scene_event_route_mode'):
+            command += ['--route-mode', str(item.get('scene_event_route_mode'))]
+    if workflow_id in {'char_alpha', 'char_expression'}:
+        source_metadata = item.get('source_char_base_metadata') or item.get('source_metadata')
+        source_image = item.get('source_image')
+        if source_metadata:
+            command += ['--source-metadata', str(source_metadata)]
+        elif source_image:
+            command += ['--source-image', str(source_image)]
+        else:
+            return {
+                **item,
+                'status': 'failed_missing_source_metadata',
+                'reason': f'{workflow_id}_requires_source_metadata_or_source_image',
+            }
     try:
         proc = subprocess.run(command, cwd=project_root, text=True, capture_output=True, timeout=runner_timeout)
     except subprocess.TimeoutExpired as exc:

@@ -22,6 +22,10 @@ SAFE_CAPTURE_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 SAFE_LABEL_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]{0,120}$')
 MAX_CAPTURES = 12
 MAX_WAIT_SECONDS = 15.0
+MAX_ACTIONS_PER_CAPTURE = 100
+MAX_ACTION_REPEAT = 80
+ALLOWED_CAPTURE_KEYS = {'enter', 'space', 'escape', 'up', 'down', 'left', 'right'}
+
 
 
 def find_label_line(project_root: Path, label: str, rel_file: str = 'game/script.rpy') -> tuple[str, int] | None:
@@ -75,6 +79,39 @@ def resolve_capture_warp(cap: dict[str, Any], project_root: Path) -> str | None:
     line += offset
     return f'{rel}:{line}'
 
+
+
+def extract_menu_choices_at_warp(project_root: Path, warp: str) -> list[str]:
+    rel, line_raw = warp.rsplit(':', 1)
+    target = (project_root / Path(rel.replace('\\', '/'))).resolve()
+    try:
+        start_line = int(line_raw)
+    except Exception:
+        return []
+    try:
+        lines = target.read_text(encoding='utf-8').splitlines()
+    except Exception:
+        return []
+    if start_line < 1 or start_line > len(lines):
+        return []
+    idx = start_line - 1
+    menu_idx = None
+    for probe in range(max(0, idx - 8), min(len(lines), idx + 4)):
+        if lines[probe].strip() == 'menu:':
+            menu_idx = probe
+            break
+    if menu_idx is None:
+        return []
+    choices: list[str] = []
+    choice_re = re.compile(r'^\s{8,}"(?P<choice>.+?)"\s*:')
+    for raw in lines[menu_idx + 1:]:
+        stripped = raw.strip()
+        if stripped.startswith('label ') or (stripped and not raw.startswith(' ')):
+            break
+        match = choice_re.match(raw)
+        if match:
+            choices.append(match.group('choice'))
+    return choices
 
 def run_phase(cmd: list[str], cwd: Path, log: Path, timeout: int = 120) -> dict[str, Any]:
     try:
@@ -130,6 +167,60 @@ def validate_capture_plan(plan_path: Path, scene_id: str, project_root: Path) ->
             else:
                 if not (0 <= wait <= MAX_WAIT_SECONDS):
                     errors.append(f'captures[{idx}] wait_seconds must be between 0 and {MAX_WAIT_SECONDS}')
+            if 'advance' in cap:
+                try:
+                    advance = int(cap['advance'])
+                except Exception:
+                    errors.append(f'captures[{idx}] advance must be integer')
+                    advance = 0
+                if not (0 <= advance <= MAX_ACTION_REPEAT):
+                    errors.append(f'captures[{idx}] advance must be between 0 and {MAX_ACTION_REPEAT}')
+            actions = cap.get('pre_capture_actions', [])
+            if actions is None:
+                actions = []
+            if not isinstance(actions, list):
+                errors.append(f'captures[{idx}] pre_capture_actions must be a list')
+                actions = []
+            elif len(actions) > MAX_ACTIONS_PER_CAPTURE:
+                errors.append(f'captures[{idx}] too many pre_capture_actions: {len(actions)} > {MAX_ACTIONS_PER_CAPTURE}')
+            for action_idx, action in enumerate(actions):
+                if not isinstance(action, dict):
+                    errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] must be object')
+                    continue
+                action_type = action.get('type')
+                if action_type not in {'wait', 'key', 'click'}:
+                    errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] invalid type: {action_type}')
+                    continue
+                repeat_raw = action.get('repeat', 1)
+                try:
+                    repeat = int(repeat_raw)
+                except Exception:
+                    errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] repeat must be integer')
+                    repeat = 1
+                if not (1 <= repeat <= MAX_ACTION_REPEAT):
+                    errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] repeat must be between 1 and {MAX_ACTION_REPEAT}')
+                for field in ['seconds', 'interval_seconds', 'post_wait_seconds']:
+                    if field in action:
+                        try:
+                            value = float(action[field])
+                        except Exception:
+                            errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] {field} must be numeric')
+                            continue
+                        if not (0 <= value <= MAX_WAIT_SECONDS):
+                            errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] {field} must be between 0 and {MAX_WAIT_SECONDS}')
+                if action_type == 'key':
+                    key = action.get('key')
+                    if key not in ALLOWED_CAPTURE_KEYS:
+                        errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] key must be one of {sorted(ALLOWED_CAPTURE_KEYS)}')
+                elif action_type == 'click':
+                    for field in ['x', 'y']:
+                        try:
+                            value = float(action.get(field))
+                        except Exception:
+                            errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] click {field} must be numeric')
+                            continue
+                        if not (0.0 <= value <= 1.0):
+                            errors.append(f'captures[{idx}].pre_capture_actions[{action_idx}] click {field} must be normalized 0..1')
             warp = resolve_capture_warp(cap, project_root)
             if not warp or not isinstance(warp, str) or ':' not in warp:
                 errors.append(f'captures[{idx}] missing warp file:line or resolvable warp_label')
@@ -158,6 +249,14 @@ def validate_capture_plan(plan_path: Path, scene_id: str, project_root: Path) ->
                         total_lines = 0
                     if total_lines and int(line) > total_lines:
                         errors.append(f'captures[{idx}] warp line outside file: {line} > {total_lines}')
+                    expected_choices = cap.get('expect_menu_choices')
+                    if expected_choices is not None:
+                        if not isinstance(expected_choices, list) or not all(isinstance(item, str) and item for item in expected_choices):
+                            errors.append(f'captures[{idx}] expect_menu_choices must be a non-empty list of strings')
+                        else:
+                            actual_choices = extract_menu_choices_at_warp(project_root, warp)
+                            if actual_choices != expected_choices:
+                                errors.append(f'captures[{idx}] menu choices mismatch: expected {expected_choices!r}, got {actual_choices!r}')
     return {'status': 'PASS' if not errors else 'FAIL', 'errors': errors, 'path': str(plan_path)}
 
 def cleanup_runtime_junk(project_root: Path) -> dict[str, Any]:

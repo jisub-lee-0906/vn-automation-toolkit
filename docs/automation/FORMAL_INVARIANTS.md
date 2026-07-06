@@ -107,7 +107,8 @@ If a capture plan is accepted by `validate-scene` or `capture-scene`, then:
 - capture count is bounded;
 - every warp target is a `.rpy` file under the selected project root;
 - warp line numbers are positive integers and within the target file bounds;
-- wait durations are bounded;
+- wait durations and pre-capture menu actions are bounded;
+- optional expected menu choices are checked against the live script at the target warp;
 - screenshot/contact-sheet outputs remain under the selected project root;
 - runtime timeout produces structured failure, not an unbounded hang or traceback dump.
 
@@ -150,11 +151,12 @@ The machine-readable command classification lives in:
 docs/automation/formal_assurance_command_matrix.json
 ```
 
-Every command exposed by `vn_automation.cli.COMMANDS` must be present in this matrix. Static tests enforce that project-class commands include an explicit scope-guard marker and that project-root globs are paired with traversal validation and per-match confinement checks.
+Every command exposed by `vn_automation.cli.COMMANDS` must be present in this matrix, including policy-only gates such as `auto-approve`. Static tests enforce that project-class commands include an explicit scope-guard marker and that project-root globs are paired with traversal validation and per-match confinement checks.
 
 Command coverage summary:
 
 - `init` — bootstrap command with explicit project root and confined game dir.
+- `new-title` — bootstrap command that creates a title-scoped Ren'Py + Obsidian project for conversation-led Hermes VN automation; refuses ambiguous/non-ASCII slugs without `--slug`, refuses non-empty target roots without `--force`, and runs core validation gates before success.
 - `check` — project command via centralized project path builder.
 - `gaps` — project command with confined report output.
 - `validate` — project command via centralized project path builder.
@@ -166,12 +168,25 @@ Command coverage summary:
 - `promote` — project command with confined metadata, candidate, QA, manifest, destination, and logs.
 - `verify` — project command; configured external runtime dependencies are intentional.
 - `preflight` — project command that verifies contract, sidecars, workflow index, and Obsidian scope.
+- `polish-scene` — post-patch vertical-polish harness with project-confined before/after scripts and optional capture plan, deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, optional `validate-scene`, QA report writeback, `scene-state`, and `scene-state --check-existing`.
 - `validate-scene` — project command with capture-plan and validation output confinement.
 - `capture-scene` — project command with capture-plan and screenshot output confinement.
+- `scene-guard` — project command with confined before/after script inputs and guard report output for deterministic patch invariant checks.
+- `scene-intent` — project command that normalizes owner scene direction into project-confined intent JSON/Markdown, pre-patch script backup, optional capture plan, optional bounded Obsidian Scene note `Automation Intent` block, and next `polish-scene` command without modifying game scripts/assets.
+- `scene-state` — project command with confined scene remaster state/patch/pool outputs and a read-only `--check-existing` validation mode for current state links and preview-only safety flags.
+- `stack-doctor` — non-project read-only readiness command for the shared Hermes + ComfyUI + Obsidian automation stack; it checks explicitly supplied/default shared infrastructure roots and endpoints.
 - `audit` — project command with confined audit JSON output.
 - `obsidian-audit` — project command with confined Obsidian active-state audit JSON output; verifies title-scoped dashboard/current_state semantic freshness, scene-label drift, writeback coverage, and optional readable-index coverage.
 - `obsidian-summarize` — project command that generates title-scoped reader-facing Obsidian timeline/seed/emotional-arc indexes and a confined JSON summary.
 - `director` — project command with explicit project root; Hermes media cache is intentional external delivery cache. Director is intentionally documented as a UX/orchestration command with targeted `require_under` checks rather than the uniform central `build_project_paths()` pattern used by most project commands.
+- `roadmap` — project command that validates a project-confined human-supervised production cockpit roadmap, including explicit anti-auto-promote/non-global-replacement goals and existing evidence links.
+- `auto-approve` — project command that evaluates policy-based delegated auto-approval from project-confined metadata, QA, scorecard, gate report, and policy without mutating assets.
+- `gameplay-composition-qa` — project command that validates project-confined gameplay screenshots for coarse VN composition failures: sprite placement/scale, textbox overlap, inter-character overlap, and basic background luma/detail.
+- `vision-composition-qa` — project command that validates project-confined structured vision composition scorecards for scene purpose, visual focus, character placement/scale, textbox safety, background harmony, continuity, blockers, and low uncertainty before delegated auto-approval.
+- `scene-story-plan` — project command that writes a project-confined structured story plan with beats, QA targets, choices, and asset opportunities.
+- `story-qa` — project command that validates project-confined story plans for canon/voice/emotion/reward/repetition/asset-opportunity gates without mutating game scripts.
+- `scene-enrichment-plan` — project command that turns a story plan plus asset generation policy into project-confined proactive candidate batch plans without generating or promoting assets.
+- `enrichment-queue` — project command that writes project-confined resolved generation requests and prompt slots from a scene enrichment plan; it does not promote assets and source-metadata-gated assets remain held.
 
 ## Out of Scope
 

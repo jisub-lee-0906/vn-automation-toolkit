@@ -220,6 +220,91 @@ def test_capture_plan_accepts_label_based_warp_and_dry_run_resolves_current_line
     assert 'capture start game/script.rpy:4' in capture.stdout
 
 
+def test_capture_plan_accepts_bounded_pre_capture_actions_for_menu_proof(tmp_path: Path):
+    project = make_min_project(tmp_path)
+    plan = project / 'docs/automation/capture_plans/scene_start.json'
+    plan.parent.mkdir(parents=True)
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_start',
+        'captures': [{
+            'name': 'second_menu_probe',
+            'warp': 'game/script.rpy:1',
+            'wait_seconds': 1.0,
+            'pre_capture_actions': [
+                {'type': 'key', 'key': 'enter', 'repeat': 12, 'interval_seconds': 0.05},
+                {'type': 'click', 'x': 0.5, 'y': 0.61, 'post_wait_seconds': 0.2},
+                {'type': 'wait', 'seconds': 0.1},
+            ],
+        }],
+    }), encoding='utf-8')
+
+    validate = run_cli('validate-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--static-only')
+    assert validate.returncode == 0, validate.stdout + validate.stderr
+    capture = run_cli('capture-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--dry-run')
+    assert capture.returncode == 0, capture.stdout + capture.stderr
+    assert 'actions=3' in capture.stdout
+
+
+def test_capture_plan_rejects_unsafe_pre_capture_actions(tmp_path: Path):
+    project = make_min_project(tmp_path)
+    plan = project / 'docs/automation/capture_plans/scene_start.json'
+    plan.parent.mkdir(parents=True)
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_start',
+        'captures': [{
+            'name': 'bad_action',
+            'warp': 'game/script.rpy:1',
+            'pre_capture_actions': [
+                {'type': 'key', 'key': 'f5'},
+                {'type': 'click', 'x': 1.5, 'y': 0.5},
+                {'type': 'wait', 'seconds': 99},
+            ],
+            'advance': 999,
+        }],
+    }), encoding='utf-8')
+
+    validate = run_cli('validate-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--static-only')
+    assert validate.returncode == 1
+    manifest = json.loads((project / 'docs/validation/scene_start/manifest.json').read_text(encoding='utf-8'))
+    text = '\n'.join(manifest['gates']['capture_plan']['errors'])
+    assert 'key must be one of' in text
+
+    assert 'click x must be normalized 0..1' in text
+    assert 'seconds must be between' in text
+    assert 'advance must be between' in text
+
+
+def test_capture_plan_validates_expected_menu_choices_at_warp(tmp_path: Path):
+    project = make_min_project(tmp_path)
+    script = project / 'game/script.rpy'
+    script.write_text(
+        'label start:\n'
+        '    menu:\n'
+        '        "First":\n'
+        '            return\n'
+        '        "Second":\n'
+        '            return\n',
+        encoding='utf-8',
+    )
+    plan = project / 'docs/automation/capture_plans/scene_start.json'
+    plan.parent.mkdir(parents=True)
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_start',
+        'captures': [{'name': 'menu', 'warp': 'game/script.rpy:2', 'expect_menu_choices': ['First', 'Second']}],
+    }), encoding='utf-8')
+    ok = run_cli('validate-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--static-only')
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    plan.write_text(json.dumps({
+        'scene_id': 'scene_start',
+        'captures': [{'name': 'menu', 'warp': 'game/script.rpy:2', 'expect_menu_choices': ['Wrong']}],
+    }), encoding='utf-8')
+    bad = run_cli('validate-scene', '--project-root', str(project), '--scene-id', 'scene_start', '--capture-plan', str(plan), '--static-only')
+    assert bad.returncode == 1
+    manifest = json.loads((project / 'docs/validation/scene_start/manifest.json').read_text(encoding='utf-8'))
+    assert 'menu choices mismatch' in '\n'.join(manifest['gates']['capture_plan']['errors'])
+
+
 def mutate_contract(project: Path, **updates) -> dict:
     contract_path = project / 'docs/automation/project_contract.json'
     contract = json.loads(contract_path.read_text(encoding='utf-8'))
@@ -327,6 +412,23 @@ def test_capture_plan_rejects_malformed_warp_and_too_many_captures(tmp_path: Pat
     report = report_path.read_text(encoding='utf-8') if report_path.exists() else proc.stdout + proc.stderr
     assert 'too many captures' in report
     assert 'warp line must be positive integer' in report
+
+
+
+def test_capture_scene_converts_advance_field_to_enter_actions():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location('capture_scene_under_test', TOOLS / 'capture_scene_contact_sheet.py')
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    actions = module.capture_actions({'advance': 3, 'pre_capture_actions': [{'type': 'wait', 'seconds': 0.5}]})
+
+    assert actions == [
+        {'type': 'key', 'key': 'enter', 'repeat': 3, 'interval_seconds': 0.15},
+        {'type': 'wait', 'seconds': 0.5},
+    ]
 
 
 

@@ -235,6 +235,39 @@ def validate_readable_indexes(obsidian_root: Path, active_state: Path | None) ->
     }
 
 
+def load_machine_scene_state(project_root: Path) -> dict[str, Any] | None:
+    state_path = project_root / 'docs/automation/scene_remaster/current_state.json'
+    if not state_path.exists():
+        return None
+    try:
+        data = json.loads(state_path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def audit_active_state_against_machine(active_fm: dict[str, str], active_text: str, dashboard_text: str, machine_state: dict[str, Any] | None) -> list[str]:
+    if not machine_state:
+        return []
+    errors: list[str] = []
+    machine_patch = str(machine_state.get('latest_patch_id') or '').strip()
+    note_patch = str(active_fm.get('latest_patch_id') or '').strip()
+    if machine_patch and note_patch and note_patch != machine_patch:
+        errors.append(f'active current_state latest_patch_id {note_patch} disagrees with machine current_state latest_patch_id {machine_patch}')
+    if machine_patch and not note_patch and machine_patch not in active_text:
+        errors.append(f'active current_state does not mention machine latest_patch_id {machine_patch}')
+    if machine_patch and dashboard_text and machine_patch not in dashboard_text:
+        errors.append(f'dashboard does not mention machine latest_patch_id {machine_patch}')
+
+    machine_status = str(machine_state.get('status') or '').strip()
+    note_source_status = str(active_fm.get('source_status') or '').strip()
+    if machine_status and note_source_status and note_source_status != machine_status:
+        errors.append(f'active current_state source_status {note_source_status} disagrees with machine current_state status {machine_status}')
+    if machine_status and dashboard_text and machine_status not in dashboard_text:
+        errors.append(f'dashboard does not mention machine current_state status {machine_status}')
+    return errors
+
+
 def audit_obsidian(project_root: Path, obsidian_root: Path, *, writeback_manifest: Path | None = None, require_writeback_manifest: bool = False, require_readable_indexes: bool = False) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -250,6 +283,7 @@ def audit_obsidian(project_root: Path, obsidian_root: Path, *, writeback_manifes
     dashboard = obsidian_root / 'Automation' / 'dashboard.md'
     active_states = find_active_current_states(notes)
     active_state = active_states[0] if len(active_states) == 1 else None
+    machine_state = load_machine_scene_state(project_root)
 
     if len(active_states) != 1:
         errors.append(f'expected exactly one active automation_state note, found {len(active_states)}')
@@ -275,6 +309,7 @@ def audit_obsidian(project_root: Path, obsidian_root: Path, *, writeback_manifes
         for required in ['Latest implemented route node', 'Current Playable State']:
             if required not in active_text:
                 warnings.append(f'active current_state missing section/field: {required}')
+        errors.extend(audit_active_state_against_machine(active_fm, active_text, dashboard_text, machine_state))
 
     if dashboard_text:
         if 'Current state: [[current_state_20260607]]' in dashboard_text or 'Compact active state: [[current_state_20260607]]' in dashboard_text:
@@ -339,6 +374,7 @@ def audit_obsidian(project_root: Path, obsidian_root: Path, *, writeback_manifes
         'active_current_state': str(active_state) if active_state else None,
         'dashboard': str(dashboard) if dashboard.exists() else None,
         'scene_label_audit': scene_label_audit,
+        'machine_scene_state': machine_state,
         'writeback_manifest_audit': writeback_audit,
         'readable_index_audit': readable_index_audit,
     }
@@ -349,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Audit Obsidian active-state semantic consistency for a VN title.')
     parser.add_argument('--project-root', default=None)
     parser.add_argument('--contract')
-    parser.add_argument('--out', default='docs/automation/obsidian_active_state_audit.json')
+    parser.add_argument('--out', '--json-out', dest='out', default='docs/automation/obsidian_active_state_audit.json', help='Project-confined JSON report path. --json-out is kept as a compatibility alias used by other report commands.')
     parser.add_argument('--update-dashboard-active-block', action='store_true', help='Insert/update a machine-managed active-state block in Automation/dashboard.md.')
     parser.add_argument('--latest-report', default=None, help='Optional latest QA/report path to write into the dashboard active block.')
     parser.add_argument('--writeback-manifest', default=None, help='Optional writeback manifest JSON to validate.')

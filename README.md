@@ -90,8 +90,15 @@ vn-auto gaps --project-root "E:/workspace/renpy-project/my_title" --json-out "E:
 vn-auto verify --project-root "E:/workspace/renpy-project/my_title" --skip-comfyui
 vn-auto validate-scene --project-root "E:/workspace/renpy-project/my_title" --scene-id opening --capture-plan "E:/workspace/renpy-project/my_title/docs/automation/capture_plans/opening.json" --static-only
 vn-auto capture-scene --project-root "E:/workspace/renpy-project/my_title" --scene-id opening --capture-plan "E:/workspace/renpy-project/my_title/docs/automation/capture_plans/opening.json" --dry-run
+vn-auto stack-doctor --obsidian-root "E:/workspace/obsidian-vn" --comfy-endpoint "http://127.0.0.1:8000" --workflow-pack-root "E:/workspace/comfyui-game-asset-workflows"
+vn-auto scene-guard --project-root "E:/workspace/renpy-project/my_title" --before docs/validation/<run>/script_before.rpy --after game/script.rpy --start-label start --end-label scene_002 --require-jump scene_002 --out docs/validation/<run>/scene_patch_guard.json
+vn-auto scene-state --project-root "E:/workspace/renpy-project/my_title" --scene-id scene_001 --check-existing
 vn-auto audit --project-root "E:/workspace/renpy-project/my_title" --strict
 ```
+
+For scene-by-scene vertical polish, use `scene-guard` after script patches to compare the backed-up before slice with the live script and enforce labels/jumps/menu/variable invariants. Use `scene-state` to write the current scene-local remaster state and preview-only candidate pool; `scene-state --check-existing` validates the existing `current_state.json`, patch manifest, guard/QA report links, capture sheets, supplemental QA reports, and preview pool policy without modifying files. Use `--supplemental-qa-report` for follow-up QA evidence, such as a menu harness report, that should not replace the primary patch QA report.
+
+`stack-doctor` is the generic Hermes + ComfyUI + Obsidian readiness gate: it checks Hermes CLI availability, ComfyUI API health, Obsidian roots, and optional workflow/output roots. Use it before long automated runs to catch missing vaults, dead endpoints, or multiple healthy ComfyUI endpoints that could cause history/output split-brain.
 
 ## Release-ready acceptance
 

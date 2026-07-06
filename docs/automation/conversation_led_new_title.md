@@ -1,0 +1,198 @@
+# Conversation-Led New VN Automation
+
+## Goal
+
+When a user tells Hermes Agent they want to make a VN/game, Hermes should behave like a supervised VN director:
+
+1. Ask only the important creative decisions.
+2. Create title-scoped Ren'Py and Obsidian folders automatically.
+3. Initialize machine-readable project contracts and automation state.
+4. Create a first playable placeholder baseline.
+5. Run real validation before claiming readiness.
+6. Continue scene-by-scene with owner approval only for irreversible or high-impact decisions.
+
+This document is a product contract for `vn-auto new-title` and for Hermes sessions using the VN skills.
+
+## User Interaction Policy
+
+Ask the owner for:
+
+- final title or approval of a proposed title;
+- ASCII slug when the title is non-English or ambiguous;
+- one-sentence genre/tone/core hook;
+- irreversible asset promotion or replacement;
+- final scene approval;
+- major rewrite direction.
+
+Do not ask the owner for routine implementation details:
+
+- exact project folder when defaults apply;
+- whether to create `docs/automation/project_contract.json`;
+- whether to create title-scoped Obsidian folders;
+- whether to run validation/lint/audit after changes;
+- whether to clean runtime junk;
+- whether to update current_state/dashboard after validated work.
+
+## Default Paths
+
+```text
+Ren'Py projects root: E:/workspace/renpy-project
+Obsidian vault root: E:/workspace/obsidian-vn
+Workflow pack: E:/workspace/comfyui-game-asset-workflows
+Ren'Py SDK: C:/Users/Desktop/Documents/Renpy/renpy-8.5.2-sdk/renpy.exe
+ComfyUI endpoint: http://127.0.0.1:8000
+```
+
+Given slug `<slug>`, the command creates:
+
+```text
+E:/workspace/renpy-project/<slug>
+E:/workspace/obsidian-vn/<slug>/VN
+```
+
+## Bootstrap Command
+
+```bash
+cd E:/workspace/vn-automation-toolkit
+python -m vn_automation.cli new-title \
+  --title "<human title>" \
+  --slug <ascii_slug> \
+  --renpy-projects-root E:/workspace/renpy-project \
+  --obsidian-vault E:/workspace/obsidian-vn \
+  --workflow-pack-root E:/workspace/comfyui-game-asset-workflows \
+  --renpy-sdk-exe C:/Users/Desktop/Documents/Renpy/renpy-8.5.2-sdk/renpy.exe
+```
+
+## Safety Rules
+
+- Non-ASCII or ambiguous titles require explicit `--slug` and fail with `GAME_SLUG_REQUIRED` when missing.
+- Project and Obsidian target roots must stay under the selected roots.
+- Non-empty project or Obsidian roots are refused unless `--force` is explicitly supplied.
+- Generated bootstrap uses `scene_local_preview_only`, `permanent_asset_changes=false`, and no approved candidates.
+- Successful bootstrap requires `validate`, `roadmap`, `scene-state --check-existing`, and `obsidian-audit` to pass.
+- Ren'Py lint is run when the SDK executable exists and `--skip-renpy-lint` is not supplied.
+
+## Created Artifacts
+
+Ren'Py/project side:
+
+- `game/script.rpy` with `start -> scene_001_opening` placeholder baseline.
+- `game/options.rpy` with title/version metadata.
+- SDK GUI template copied when available.
+- `docs/automation/project_contract.json`.
+- `docs/automation/production_cockpit_roadmap.json`.
+- `docs/automation/scene_remaster/current_state.json`.
+- `docs/automation/scene_remaster/patches/bootstrap_placeholder_baseline.json`.
+- `docs/automation/scene_remaster/scene_pools/scene_001_opening.json`.
+- `docs/automation/writeback_manifest.json` covering the required Obsidian active-cockpit notes.
+- `docs/validation/bootstrap/baseline_report.md`.
+
+Obsidian side:
+
+- `00_Index.md`.
+- `Automation/dashboard.md`.
+- `Automation/current_state_0001_bootstrap.md`.
+- `Automation/reader_entrypoint.md`.
+- `Scenes/scene_001_opening.md`.
+- starter `Characters/`, `Canon/`, and `Decisions/` notes.
+
+## Obsidian Active-Cockpit Structure
+
+New titles should keep Obsidian deliberately layered instead of letting every run append to the dashboard:
+
+```text
+Machine truth:
+  Ren'Py docs/automation/scene_remaster/current_state.json
+
+Human active cockpit:
+  Automation/dashboard.md                  short pointer page only
+  Automation/current_state_0001_bootstrap.md human-readable active brief
+  Automation/reader_entrypoint.md          cold-start entrypoint
+  Scenes/scene_001_opening.md              scene intent/state/canon
+
+History/archive:
+  Automation/archive/*.md                  long logs, superseded dashboards, old reports
+```
+
+Rules:
+
+- Dashboard stays short. It points to machine state, active current-state note, active scene, latest QA, and next safe unit.
+- Active current-state note mirrors machine state for `source_status` and `latest_patch_id`.
+- `reader_entrypoint.md` is the first page to read after context compaction or a new session.
+- Long production logs are archived, not appended indefinitely to `dashboard.md`.
+- `obsidian-audit --require-writeback-manifest` must pass after bootstrap and after baseline-changing work.
+
+## Post-Bootstrap Loop
+
+After `NEW_TITLE_BOOTSTRAP_COMPLETE`, Hermes should:
+
+1. Report created paths and validation output.
+2. Ask the owner only for the next Scene 001 creative direction.
+3. Normalize that response into a project-confined intent packet and prepared validation run:
+
+```bash
+python -m vn_automation.cli scene-intent \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --intent-id <safe_patch_id> \
+  --owner-text "<owner direction>" \
+  --objective "<one-sentence implementation objective>" \
+  --choice "<important choice text>" \
+  --make-capture-plan \
+  --update-scene-note
+```
+
+`scene-intent` writes `docs/automation/scene_intents/<scene_id>/<intent_id>.json`, a Markdown companion, `docs/validation/<intent_id>/script_before.rpy`, and optionally `docs/validation/<intent_id>/capture_plan.json`. With `--update-scene-note`, it also upserts a bounded `Automation Intent` block in the title-scoped Obsidian scene note using `<!-- vn-auto:scene-intent:start/end -->` anchors. It does **not** modify game scripts or assets; it prepares the safe patch/run context and prints the next `polish-scene` command.
+4. Implement one minimal vertical polish patch.
+5. Back up the pre-patch script slice, then run the post-patch harness:
+
+```bash
+python -m vn_automation.cli polish-scene \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --patch-id <safe_patch_id> \
+  --before docs/validation/<safe_patch_id>/script_before.rpy \
+  --start-label scene_001_opening \
+  --changed-file game/script.rpy
+```
+
+`polish-scene` runs deterministic `scene-guard`, `validate`, `obsidian-audit`, optional Ren'Py lint, writes `scene_polish_qa_report.md/json`, writes `scene-state`, and immediately verifies it with `scene-state --check-existing` while preserving `scene_local_preview_only` and `permanent_asset_changes=false`.
+
+When the patch changes visible gameplay or owner review needs visual evidence, attach a project-confined capture plan:
+
+```bash
+python -m vn_automation.cli polish-scene \
+  --project-root E:/workspace/renpy-project/<slug> \
+  --scene-id scene_001_opening \
+  --patch-id <safe_patch_id> \
+  --before docs/validation/<safe_patch_id>/script_before.rpy \
+  --start-label scene_001_opening \
+  --changed-file game/script.rpy \
+  --capture-plan docs/validation/<safe_patch_id>/capture_plan.json
+```
+
+For CI/static smoke, add `--capture-static-only`; for owner-facing visual QA, omit it so `validate-scene` runs runtime capture/contact-sheet gates. Runtime contact sheets are linked into `scene-state` as `capture_sheets`; static validation reports are linked as supplemental QA.
+5. Continue scene-by-scene.
+
+## Verification Snapshot
+
+The command is covered by:
+
+```text
+tests/test_new_title_bootstrap.py
+tests/test_vn_auto_cli.py
+tests/test_formal_assurance_invariants.py
+tests/test_production_cockpit_roadmap.py
+```
+
+A live Windows smoke under `docs/validation/new_title_bootstrap_smoke_20260615/` produced:
+
+```text
+NEW_TITLE_BOOTSTRAP_COMPLETE
+validation validate 0
+validation roadmap 0
+validation scene-state 0
+validation obsidian-audit 0
+renpy_lint 0
+remaining rpyc/rpyb: 0 after cleanup
+```

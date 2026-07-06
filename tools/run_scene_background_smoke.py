@@ -26,7 +26,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 from danbooru_taxonomy import validate_tags
-from vn_product_config import build_project_paths, require_under
+from vn_product_config import build_project_paths, display_profile, generation_dimensions, require_under
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = PROJECT_ROOT / "docs/automation/project_contract.json"
@@ -34,7 +34,7 @@ RUNS_ROOT = PROJECT_ROOT / "docs/automation/generation_runs"
 
 README_POSITIVE = (
     "masterpiece, best_quality, amazing_quality, 4k, very_aesthetic, high_resolution, "
-    "ultra-detailed, absurdres, newest, scenery, no_humans, wide_shot, landscape, "
+    "ultra-detailed, absurdres, newest, scenery, no_humans, "
     "{background_theme}, {time_mood}, BREAK, depth_of_field, volumetric_lighting"
 )
 README_NEGATIVE = (
@@ -266,10 +266,18 @@ def main() -> int:
     parser.add_argument('--seed', type=int, default=SEED, help='Sampler seed; override for rerolls while preserving prompt contract.')
     parser.add_argument('--prompt-slots', help='Agent-authored prompt slots JSON. Required for production scene_background generation.')
     parser.add_argument('--prepare-only', action='store_true', help='Patch workflow and write metadata without submitting to ComfyUI.')
+    parser.add_argument('--width', type=int, default=None, help='Output width. Defaults to project display_profile generation_width or legacy 1024.')
+    parser.add_argument('--height', type=int, default=None, help='Output height. Defaults to project display_profile generation_height or legacy 576.')
     parser.add_argument('--out-metadata', help='Metadata path for prepare-only/tests. Defaults to run_dir/metadata.json.')
     args = parser.parse_args()
     project_paths = build_project_paths(args.project_root, None)
     project_root = project_paths.project_root
+    default_width, default_height = generation_dimensions(project_paths.contract, fallback_width=WIDTH, fallback_height=HEIGHT)
+    output_width = args.width if args.width is not None else default_width
+    output_height = args.height if args.height is not None else default_height
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('SCENE_BACKGROUND_REFUSED: width and height must be positive integers')
+    active_display_profile = display_profile(project_paths.contract)
     if args.out_metadata:
         try:
             out_meta_check = Path(args.out_metadata).expanduser().resolve()
@@ -314,8 +322,8 @@ def main() -> int:
 
     workflow["3"]["inputs"]["text"] = positive
     workflow["4"]["inputs"]["text"] = negative
-    workflow["5"]["inputs"]["width"] = WIDTH
-    workflow["5"]["inputs"]["height"] = HEIGHT
+    workflow["5"]["inputs"]["width"] = output_width
+    workflow["5"]["inputs"]["height"] = output_height
     workflow["6"]["inputs"]["seed"] = args.seed
     workflow["6"]["inputs"]["steps"] = STEPS
     workflow["6"]["inputs"]["cfg"] = CFG
@@ -365,10 +373,11 @@ def main() -> int:
         "positive_prompt": positive,
         "negative_prompt": negative,
         "seed": args.seed,
-        "width": WIDTH,
-        "height": HEIGHT,
+        "width": output_width,
+        "height": output_height,
         "steps": STEPS,
         "cfg": CFG,
+        "display_profile": active_display_profile,
         "output_paths": [],
         "candidate_copies": [],
         "qa_status": "pending_generation",

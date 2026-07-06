@@ -11,6 +11,7 @@ TOOLS = ROOT / 'tools'
 
 COMMANDS: dict[str, tuple[str, str]] = {
     'init': ('init_vn_automation_project.py', 'Bootstrap VN automation docs/config for a RenPy project.'),
+    'new-title': ('bootstrap_new_vn_title.py', 'Create a title-scoped RenPy + Obsidian VN project for conversation-led Hermes automation.'),
     'check': ('check_renpy_asset_refs.py', 'Check literal RenPy image/audio refs under game/ exist.'),
     'gaps': ('report_renpy_integration_gaps.py', 'Report manifest-to-RenPy integration gaps.'),
     'validate': ('validate_vn_automation_docs.py', 'Validate automation docs, schemas, workflow index, and manifest.'),
@@ -22,12 +23,26 @@ COMMANDS: dict[str, tuple[str, str]] = {
     'promote': ('promote_asset_candidate.py', 'Promote an approved candidate into RenPy assets and manifest.'),
     'verify': ('verify_vn_automation_runtime.py', 'Run product/runtime verification gates.'),
     'preflight': ('preflight_vn_project.py', 'Run fail-closed cross-game project readiness checks.'),
+    'polish-scene': ('polish_scene_harness.py', 'Run the safe post-patch scene vertical-polish guard/QA/state harness.'),
     'validate-scene': ('validate_scene.py', 'Run title-agnostic scene validation gates from a capture plan.'),
     'capture-scene': ('capture_scene_contact_sheet.py', 'Capture a RenPy scene contact sheet from a generic capture plan.'),
+    'scene-guard': ('scene_patch_guard.py', 'Compare before/after RenPy scene slices and enforce deterministic patch invariants.'),
+    'scene-intent': ('scene_intent_harness.py', 'Normalize an owner scene direction into an intent packet and prepared polish-scene run.'),
+    'scene-state': ('scene_remaster_state.py', 'Write scene-local remaster state, patch manifest, and preview-only candidate pool files.'),
+    'stack-doctor': ('automation_stack_doctor.py', 'Check the generic Hermes + ComfyUI + Obsidian automation stack.'),
     'audit': ('audit_vn_artifacts.py', 'Audit artifact/git categories and preview screenshot evidence.'),
     'obsidian-audit': ('audit_obsidian_active_state.py', 'Audit Obsidian active-state/dashboard/current-state semantic consistency.'),
     'obsidian-summarize': ('summarize_obsidian_readability_indexes.py', 'Generate reader-facing Obsidian timeline/seed/emotional-arc indexes.'),
     'director': ('vn_director_console.py', 'Director-facing UX console: dashboard, scene drafts, approval cards.'),
+    'roadmap': ('validate_production_cockpit_roadmap.py', 'Validate the human-supervised VN production cockpit roadmap.'),
+    'auto-approve': ('auto_approve_candidate.py', 'Evaluate policy-based delegated auto-approval for generated VN asset candidates.'),
+    'gameplay-composition-qa': ('gameplay_composition_qa.py', 'Validate VN gameplay screenshot composition: sprite placement, scale, textbox overlap, and basic background harmony.'),
+    'vision-composition-qa': ('vision_composition_qa.py', 'Validate structured vision composition scorecards for VN auto-approval.'),
+    'scene-story-plan': ('scene_story_plan.py', 'Create a structured VN scene story plan with asset opportunities.'),
+    'story-qa': ('story_qa.py', 'Validate VN story plan canon/voice/emotion/reward gates.'),
+    'scene-enrichment-plan': ('scene_enrichment_plan.py', 'Convert a story plan into proactive asset candidate batches.'),
+    'enrichment-queue': ('enrichment_queue.py', 'Create resolved generation queue and prompt slots from a scene enrichment plan.'),
+
 }
 
 

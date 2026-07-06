@@ -31,10 +31,11 @@ RUNS_ROOT = PROJECT_ROOT / "docs/automation/generation_runs"
 
 README_POSITIVE = (
     "masterpiece, best_quality, amazing_quality, 4k, very_aesthetic, high_resolution, "
-    "ultra-detailed, absurdres, newest, 1girl, solo, medium_breasts, cowboy_shot, "
+    "ultra-detailed, absurdres, newest, 1girl, solo, cowboy_shot, "
     "standing, facing_viewer, looking_at_viewer, expressionless, closed_mouth, "
-    "arms_at_sides, {character_features}, {outfit_detail}, grey_background"
+    "arms_at_sides, {body_shape_segment}{character_features}, {outfit_detail}, grey_background"
 )
+
 README_NEGATIVE = (
     "modern, recent, old, oldest, cartoon, graphic, text, painting, crayon, graphite, "
     "abstract, glitch, deformed, mutated, ugly, disfigured, long_body, lowres, "
@@ -88,7 +89,7 @@ def listify(value) -> list[str]:
     return []
 
 
-def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], dict]:
+def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list[str], list[str], list[str], list[str], dict]:
     data = load_json(path)
     if data.get('workflow_id') and data.get('workflow_id') != workflow_id:
         raise RuntimeError(f'Prompt slots workflow_id mismatch: expected {workflow_id}, got {data.get("workflow_id")}')
@@ -97,9 +98,11 @@ def load_prompt_slots(path: Path, workflow_id: str, asset_id: str) -> tuple[list
     slots = data.get('prompt_slots') or {}
     character_features = listify(slots.get('character_features'))
     outfit_detail = listify(slots.get('outfit_detail'))
+    body_shape = listify(slots.get('body_shape'))
+    negative_tags = listify(slots.get('negative_tags'))
     if not character_features or not outfit_detail:
         raise RuntimeError('UNROUTED_CHAR_BASE: agent-authored prompt_slots.character_features and prompt_slots.outfit_detail are required')
-    return character_features, outfit_detail, data
+    return character_features, outfit_detail, body_shape, negative_tags, data
 
 
 def load_json(path: Path):
@@ -212,24 +215,26 @@ def main() -> int:
     prompt_slots_path = resolve_prompt_slots_path(project_root, Path(args.prompt_slots)) if args.prompt_slots else prompt_slots_path_for(project_root, args.asset_id, args.scene_id)
     if prompt_slots_path is None:
         raise RuntimeError('UNROUTED_CHAR_BASE: missing agent-authored prompt slots JSON under docs/production/prompt_slots')
-    character_feature_tags, outfit_detail_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'char_base', args.asset_id)
+    character_feature_tags, outfit_detail_tags, body_shape_tags, negative_tags, prompt_slots_data = load_prompt_slots(prompt_slots_path, 'char_base', args.asset_id)
 
     contract = load_json(contract_path)
     workflow_root = Path(contract["workflow_pack_root"])
     output_root = Path(contract["comfyui_output_root"])
     workflow_path = workflow_root / "char_base/char_base_workflow_api.json"
 
-    placeholder_tags = character_feature_tags + outfit_detail_tags
+    placeholder_tags = character_feature_tags + outfit_detail_tags + body_shape_tags + negative_tags
     taxonomy_validation, taxonomy_meta = validate_tags(workflow_root, placeholder_tags)
 
     workflow = load_json(workflow_path)
     workflow_sha = hashlib.sha256(workflow_path.read_bytes()).hexdigest()
 
+    body_shape_segment = (", ".join(body_shape_tags) + ", ") if body_shape_tags else ""
     positive = README_POSITIVE.format(
+        body_shape_segment=body_shape_segment,
         character_features=", ".join(character_feature_tags),
         outfit_detail=", ".join(outfit_detail_tags),
     )
-    negative = README_NEGATIVE
+    negative = README_NEGATIVE + ((", " + ", ".join(negative_tags)) if negative_tags else "")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     asset_slug = slugify(args.asset_id)
@@ -285,7 +290,9 @@ def main() -> int:
             "taxonomy_validation": taxonomy_validation,
             "csv_placeholder_tags": placeholder_tags,
             "character_features": character_feature_tags,
+            "body_shape": body_shape_tags,
             "outfit_detail": outfit_detail_tags,
+            "negative_tags": negative_tags,
             "positive_prompt": positive,
             "negative_prompt": negative,
             "seed": seed,
@@ -352,7 +359,9 @@ def main() -> int:
         "taxonomy_validation": taxonomy_validation,
         "csv_placeholder_tags": placeholder_tags,
         "character_features": character_feature_tags,
+        "body_shape": body_shape_tags,
         "outfit_detail": outfit_detail_tags,
+        "negative_tags": negative_tags,
         "positive_prompt": positive,
         "negative_prompt": negative,
         "seed": seed,
