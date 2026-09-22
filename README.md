@@ -106,3 +106,7 @@ Before calling a toolkit checkout release-ready:
 7. The live title still passes `pytest`, `validate`, `check`, `verify`, and strict `audit` after runtime junk cleanup.
 
 See `docs/automation/productization_readme.md` for the extended product workflow and Telegram approval UX.
+
+## Windows console compatibility
+
+Director console status output uses ASCII markers so the CLI also works in legacy Windows code pages such as CP949. This affects display only; project files and approval behavior are unchanged.

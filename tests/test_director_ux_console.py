@@ -74,8 +74,8 @@ def test_director_status_presents_project_agnostic_dashboard(tmp_path: Path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert 'VN Production Console' in proc.stdout
     assert 'moonlit_library' in proc.stdout
-    assert '[✓] Ren\'Py project contract' in proc.stdout
-    assert '[✓] Obsidian production vault' in proc.stdout
+    assert '[OK] Ren\'Py project contract' in proc.stdout
+    assert '[OK] Obsidian production vault' in proc.stdout
     assert 'Today\'s director actions' in proc.stdout
     assert '1. Create a new scene' in proc.stdout
     assert str(project) in proc.stdout
@@ -104,9 +104,9 @@ def test_director_new_scene_creates_supervised_playable_draft_and_review_cards(t
     assert 'Scene Draft Ready' in proc.stdout
     assert 'Moonlit Library' in proc.stdout
     assert 'opening_night_library' in proc.stdout
-    assert '[✓] Obsidian scene note' in proc.stdout
-    assert '[✓] Ren\'Py placeholder draft' in proc.stdout
-    assert '[✓] Owner review queue' in proc.stdout
+    assert '[OK] Obsidian scene note' in proc.stdout
+    assert '[OK] Ren\'Py placeholder draft' in proc.stdout
+    assert '[OK] Owner review queue' in proc.stdout
     assert 'Next director choices' in proc.stdout
 
     note = vault / 'VN/Scenes/opening_night_library.md'
