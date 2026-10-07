@@ -1,0 +1,6 @@
+Python 3.13.12
+pip 25.3
+pytest 9.1.1
+Pillow 12.3.0
+pluggy 1.6.0
+vn-automation-toolkit 0.1.0
