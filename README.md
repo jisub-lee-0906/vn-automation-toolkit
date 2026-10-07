@@ -22,8 +22,8 @@ This toolkit is **not** a fully unattended game generator. It is a human-directe
 
 ## Historical public-readiness review (2026-09-23)
 
-- **This environment:** documentation and command/configuration review only. No title project, Ren'Py runtime, ComfyUI backend, model, GPU, external API, or database was run.
-- **Earlier records:** the 2026-09-23 repository audit recorded 132 passing tests for this toolkit, including Windows console encoding regression coverage. Those tests were not rerun during this documentation-only update and do not establish a Ren'Py runtime result.
+- **During the 2026-09-23 review:** documentation and command/configuration review only. No title project, Ren'Py runtime, ComfyUI backend, model, GPU, external API, or database was run.
+- **Earlier records:** the 2026-09-23 repository audit recorded 132 passing tests for this toolkit, including Windows console encoding regression coverage. Those tests were not rerun during that 2026-09-23 documentation-only update and do not establish a Ren'Py runtime result.
 - **Not verified:** cleanroom bootstrap, generation queue execution, promoted assets, and Ren'Py lint/runtime/end-to-end behavior.
 
 ## What it does
