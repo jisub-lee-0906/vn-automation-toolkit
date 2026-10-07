@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: <toolkit-checkout>
+configfile: pyproject.toml
+collected 5 items
+
+tests\test_assurance_completion_hardening.py .                           [ 20%]
+tests\test_preflight_hardening.py .                                      [ 40%]
+tests\test_assurance_completion_hardening.py .                           [ 60%]
+tests\test_preflight_hardening.py ..                                     [100%]
+
+============================== 5 passed in 2.26s ==============================

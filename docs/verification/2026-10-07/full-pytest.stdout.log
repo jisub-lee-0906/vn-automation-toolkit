@@ -1,0 +1,37 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: <toolkit-checkout>
+configfile: pyproject.toml
+testpaths: tests
+collected 132 items
+
+tests\test_artifact_audit.py ...                                         [  2%]
+tests\test_asset_lifecycle.py ...                                        [  4%]
+tests\test_assurance_completion_hardening.py .................           [ 17%]
+tests\test_cross_game_portability_hardening.py ......................... [ 36%]
+..........                                                               [ 43%]
+tests\test_director_remaining_ux.py ..                                   [ 45%]
+tests\test_director_ux_console.py ..                                     [ 46%]
+tests\test_extract_asset_requests_from_scene_note.py .                   [ 47%]
+tests\test_formal_assurance_invariants.py ......                         [ 52%]
+tests\test_fresh_game_lifecycle.py ...                                   [ 54%]
+tests\test_init_vn_automation_project.py ...                             [ 56%]
+tests\test_level35_obsidian_review_queue.py ...                          [ 59%]
+tests\test_level4_generation_orchestrator.py ...                         [ 61%]
+tests\test_level5_renpy_audio_integration.py ....                        [ 64%]
+tests\test_obsidian_active_state_audit.py ......                         [ 68%]
+tests\test_obsidian_readability_indexes.py ..                            [ 70%]
+tests\test_preflight_hardening.py ....                                   [ 73%]
+tests\test_productized_project_config.py ...                             [ 75%]
+tests\test_promote_asset_candidate.py ....                               [ 78%]
+tests\test_prompt_slots_fail_closed.py ........                          [ 84%]
+tests\test_qa_asset_file.py ...                                          [ 87%]
+tests\test_report_renpy_integration_gaps.py .                            [ 87%]
+tests\test_resolve_asset_requests.py ...                                 [ 90%]
+tests\test_scene_background_routing.py ..                                [ 91%]
+tests\test_scene_prop_cg_routing.py ..                                   [ 93%]
+tests\test_telegram_approval_loop.py .....                               [ 96%]
+tests\test_vn_auto_cli.py ...                                            [ 99%]
+tests\test_windows_console_encoding.py .                                 [100%]
+
+============================ 132 passed in 34.33s =============================

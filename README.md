@@ -1,10 +1,26 @@
 # VN Automation Toolkit
 
+## 한국어 요약 | 파일 반영 전 검증과 안전한 교체
+
+Ren’Py 비주얼 노벨 제작에서 후보 파일의 검사·반영·상태 추적을 자동화하는 **AI 협업 개인 프로젝트**입니다. 기업용 자산관리 솔루션이나 상용 운영 경력으로 소개하지 않습니다.
+
+- **반영 전 검사:** 경로 이탈, 중복 ID, 승인 플래그 및 QA 기록 확인
+- **교체·기록:** 임시 파일 복사 후 원자적 교체, 선택적 백업과 상태 기록
+- **오류 대응:** 잘못된 입력·의도치 않은 덮어쓰기를 거부하는 테스트
+- **재현 결과:** 2026-10-07 AI 에이전트가 Windows / Python 3.13.12에서 선택 테스트 5개와 전체 테스트 132개 통과를 확인했습니다. 선택 테스트는 전체 모음의 일부이며 합산하지 않습니다.
+
+[작은 재현 예제와 명령](docs/operations-walkthrough.md) · [환경·커밋·출력 기록](docs/verification/2026-10-07/README.md) · [채용용 사례](https://github.com/jisub-lee-0906/engineering-portfolio/blob/main/cases/automation-toolkit.md)
+
+원자적 교체 호출은 구현에서 확인했고, 강제 덮어쓰기 테스트는 이전 내용의 백업을 확인합니다. 프로세스 중단·디스크 장애까지 원자성을 검증했다는 뜻은 아닙니다. 승인 플래그 검사는 실제 사람의 독립적 승인과 구분합니다. Ren’Py·ComfyUI·GPU·외부 API의 실제 실행은 이번 범위가 아닙니다.
+
+---
+
+
 Supervised production automation for Ren'Py visual novels.
 
 This toolkit is **not** a fully unattended game generator. It is a human-directed production loop that automates repetitive tracking, validation, review-card generation, candidate promotion, and verification while keeping story direction and final asset approval under human control.
 
-## Public-readiness status (2026-09-23)
+## Historical public-readiness review (2026-09-23)
 
 - **This environment:** documentation and command/configuration review only. No title project, Ren'Py runtime, ComfyUI backend, model, GPU, external API, or database was run.
 - **Earlier records:** the 2026-09-23 repository audit recorded 132 passing tests for this toolkit, including Windows console encoding regression coverage. Those tests were not rerun during this documentation-only update and do not establish a Ren'Py runtime result.
@@ -55,7 +71,7 @@ vn-auto --help
 vn-auto --version
 ```
 
-`pyproject.toml` defines the `vn-auto` entry point. The checkout-specific paths shown in older examples below are replaced with placeholders; supply paths that exist on your machine. Test execution is intentionally not claimed here because it was not rerun in this environment.
+`pyproject.toml` defines the `vn-auto` entry point. The checkout-specific paths shown in older examples below are replaced with placeholders; supply paths that exist on your machine. The 2026-09-23 review did not rerun tests. See the dated 2026-10-07 verification record above for the later agent-executed local run.
 
 ## Run tests
 
