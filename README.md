@@ -33,23 +33,17 @@ Ren’Py 제작에서 **후보 파일 검사 → 승인·QA 확인 → 백업·�
         → director 화면·Ren’Py 검증·산출물 감사
 ```
 
-This repository should contain reusable toolkit source only:
+재사용할 툴킷 소스와 게임별 실행 데이터를 분리합니다.
 
-- `vn_automation/` — package entry point and CLI dispatcher
-- `tools/` — reusable production scripts
-- `tests/` — temp-project tests and safety gates
-- `docs/automation/` — product docs, schemas, templates, fixtures
-- `pyproject.toml` — installable package metadata
+| 위치 | 역할 |
+| --- | --- |
+| `vn_automation/` | 패키지 진입점·CLI dispatcher |
+| `tools/` | 재사용 가능한 제작 스크립트 |
+| `tests/` | 임시 프로젝트 기반 테스트·검증 조건 |
+| `docs/automation/` | 제품 문서·스키마·템플릿·fixture |
+| `pyproject.toml` | 설치 가능한 패키지 메타데이터 |
 
-It should **not** contain title-specific runtime state:
-
-- `game/`
-- `docs/production/`
-- `docs/automation/project_contract.json`
-- generated candidates/runs/QA reports except deliberate test fixtures
-- Ren'Py cache/saves/logs/compiled files
-
-Individual games keep their own `game/`, production docs, manifests, screenshots, generated candidates, and promotion records under the actual Ren'Py project root.
+이 저장소에는 타이틀별 `game/`, `docs/production/`, `docs/automation/project_contract.json`, 생성 후보·실행·QA 보고서(명시적 테스트 fixture 제외), Ren’Py cache/save/log/compiled 파일을 넣지 않습니다. 개별 게임의 제작 문서·manifest·스크린샷·생성 후보·반영 기록은 **실제 Ren’Py 프로젝트 루트**에 보관합니다.
 
 ### Windows 콘솔
 
@@ -71,7 +65,7 @@ python -m pytest -q
 <details>
 <summary>타이틀 초기화와 경로 확인</summary>
 
-Use explicit absolute paths for bootstrap. After a title has `docs/automation/project_contract.json`, project tools may run from that project root, but otherwise fail closed instead of silently selecting the toolkit checkout.
+초기화에는 절대 경로를 명시합니다. 타이틀에 `docs/automation/project_contract.json`이 있으면 그 프로젝트 루트에서 실행하고, 계약이 없으면 툴킷 checkout을 자동 선택하지 않고 중단합니다.
 
 ```bash
 vn-auto init \
@@ -83,7 +77,7 @@ vn-auto init \
   --obsidian-vault "/path/to/obsidian-vault"
 ```
 
-Confirm the `INIT_VN_AUTOMATION_PROJECT` banner prints the intended `project_root` before continuing. When `--obsidian-vault` is supplied without `--obsidian-project-root`, init now creates a title-scoped default at `<vault>/<game_slug>/VN`.
+계속하기 전에 `INIT_VN_AUTOMATION_PROJECT` 배너가 의도한 `project_root`를 출력하는지 확인합니다. `--obsidian-vault`만 주고 `--obsidian-project-root`를 생략하면 `<vault>/<game_slug>/VN`에 타이틀별 기본 경로를 만듭니다.
 
 </details>
 
@@ -101,7 +95,7 @@ vn-auto director preview --project-root "/path/to/my_title" --scene-id opening -
 vn-auto director approve-candidate --project-root "/path/to/my_title" --metadata ".../metadata.json" --asset-id bg_opening --asset-type background --renpy-name "bg opening" --scene-usage opening --approved
 ```
 
-Verification gates:
+검증 명령:
 
 ```bash
 vn-auto validate --project-root "/path/to/my_title" --skip-obsidian
@@ -128,17 +122,17 @@ vn-auto audit --project-root "/path/to/my_title" --strict
 <details>
 <summary>릴리스 준비 판정 기준</summary>
 
-Before calling a toolkit checkout release-ready:
+릴리스 준비 완료로 판단하기 전에 다음을 확인합니다.
 
-1. Toolkit repo has no title-specific `game/`, `docs/production/`, or `project_contract.json`.
-2. No docs/scripts hardcode an active title path.
-3. Full test suite passes.
-4. Editable install points to this checkout.
-5. `vn-auto --help` and `vn-auto --version` work.
-6. A cleanroom title can run `init -> preflight -> director new-scene -> sync/queue -> validate -> validate-scene -> verify` with sidecars under the cleanroom title root.
-7. The live title still passes `pytest`, `validate`, `check`, `verify`, and strict `audit` after runtime junk cleanup.
+1. 툴킷 저장소에 타이틀별 `game/`, `docs/production/`, `project_contract.json`이 없습니다.
+2. 문서·스크립트에 현재 타이틀의 고정 경로가 없습니다.
+3. 전체 테스트가 통과합니다.
+4. editable install이 이 checkout을 가리킵니다.
+5. `vn-auto --help`, `vn-auto --version`이 동작합니다.
+6. 별도로 준비한 새 타이틀에서 `init -> preflight -> director new-scene -> sync/queue -> validate -> validate-scene -> verify`를 실행하고, sidecar가 해당 타이틀 루트 안에 생성됩니다.
+7. 실행 중인 타이틀의 임시 산출물을 정리한 뒤에도 `pytest`, `validate`, `check`, `verify`, strict `audit`가 통과합니다.
 
-See `docs/automation/productization_readme.md` for the extended product workflow and Telegram approval UX.
+제품 흐름과 Telegram 승인 UX는 [제품화 안내](docs/automation/productization_readme.md)를 참고합니다. 위 목록은 앞으로 확인할 판정 기준이며, 모두 새로 실행했다는 결과 보고가 아닙니다.
 
 </details>
 
