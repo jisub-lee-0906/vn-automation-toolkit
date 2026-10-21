@@ -1,47 +1,37 @@
-# VN Automation Toolkit
+# VN Automation Toolkit | 파일 검증·반영 자동화
 
-## 한국어 요약 | 파일 반영 전 검증과 안전한 교체
+Ren’Py 제작에서 **후보 파일 검사 → 승인·QA 확인 → 백업·교체 → 상태 추적**을 다루는 Python 도구입니다. 반복 파일 처리의 오류 대응과 검증 근거를 살펴볼 수 있습니다.
 
-Ren’Py 비주얼 노벨 제작에서 후보 파일의 검사·반영·상태 추적을 자동화하는 **AI 협업 개인 프로젝트**입니다. 기업용 자산관리 솔루션이나 상용 운영 경력으로 소개하지 않습니다.
+[재현 예제](docs/operations-walkthrough.md) · [2026-10-07 검증 기록](docs/verification/2026-10-07/README.md) · [채용용 사례](https://github.com/jisub-lee-0906/engineering-portfolio/blob/main/cases/automation-toolkit.md)
 
-- **반영 전 검사:** 경로 이탈, 중복 ID, 승인 플래그 및 QA 기록 확인
-- **교체·기록:** 임시 파일 복사 후 원자적 교체, 선택적 백업과 상태 기록
-- **오류 대응:** 잘못된 입력·의도치 않은 덮어쓰기를 거부하는 테스트
-- **재현 결과:** 2026-10-07 AI 에이전트가 Windows / Python 3.13.12에서 선택 테스트 5개와 전체 테스트 132개 통과를 확인했습니다. 선택 테스트는 전체 모음의 일부이며 합산하지 않습니다.
+## 프로젝트 개요
 
-[작은 재현 예제와 명령](docs/operations-walkthrough.md) · [환경·커밋·출력 기록](docs/verification/2026-10-07/README.md) · [채용용 사례](https://github.com/jisub-lee-0906/engineering-portfolio/blob/main/cases/automation-toolkit.md)
+잘못된 경로, 중복 ID, 승인·QA 기록 누락, 의도치 않은 덮어쓰기를 파일 반영 전에 검사합니다. 최종 에셋의 채택과 제작 방향은 사용자가 결정하는 **AI 협업 개인 프로젝트**입니다.
 
-원자적 교체 호출은 구현에서 확인했고, 강제 덮어쓰기 테스트는 이전 내용의 백업을 확인합니다. 프로세스 중단·디스크 장애까지 원자성을 검증했다는 뜻은 아닙니다. 승인 플래그 검사는 실제 사람의 독립적 승인과 구분합니다. Ren’Py·ComfyUI·GPU·외부 API의 실제 실행은 이번 범위가 아닙니다.
+| 항목 | 내용 |
+| --- | --- |
+| 형태 | 로컬 제작 자동화 CLI·재사용 스크립트 |
+| 핵심 기술 | Python 3.11+, `vn-auto`, pytest |
+| 주요 처리 | 경로·상태 검사, 선택적 백업, 임시 복사와 원자적 파일 교체 |
+| 범위 | Ren’Py 제작 지원. 무인 게임 생성기·기업용 자산관리 제품은 아님 |
 
----
+## 주요 내용
 
+- **반영 전 검사:** 경로 이탈, 중복 ID, 승인 플래그와 QA 기록 확인
+- **교체·기록:** 임시 파일 복사 후 `os.replace`, 선택적 백업, manifest·sidecar·lifecycle 갱신
+- **제작 흐름:** 장면 노트에서 요청 추출, 기존 후보 재사용 검사, 누락 에셋 queue 구성
+- **검토 지원:** director 상태·리뷰 카드·미리보기·통합 누락 보고
+- **오류 대응:** 승인 누락·잘못된 입력·덮어쓰기 등 거부 조건을 테스트로 관리
 
-Supervised production automation for Ren'Py visual novels.
+승인 플래그 검사는 실제 사람의 독립적 승인과 구분합니다. QA 기록의 존재만으로 시각·청각 품질을 보장하지 않습니다.
 
-This toolkit is **not** a fully unattended game generator. It is a human-directed production loop that automates repetitive tracking, validation, review-card generation, candidate promotion, and verification while keeping story direction and final asset approval under human control.
-
-## Historical public-readiness review (2026-09-23)
-
-- **During the 2026-09-23 review:** documentation and command/configuration review only. No title project, Ren'Py runtime, ComfyUI backend, model, GPU, external API, or database was run.
-- **Earlier records:** the 2026-09-23 repository audit recorded 132 passing tests for this toolkit, including Windows console encoding regression coverage. Those tests were not rerun during that 2026-09-23 documentation-only update and do not establish a Ren'Py runtime result.
-- **Not verified:** cleanroom bootstrap, generation queue execution, promoted assets, and Ren'Py lint/runtime/end-to-end behavior.
-
-## What it does
+## 구조와 기술
 
 ```text
-Obsidian scene note
--> Required Assets extraction
--> manifest/candidate reuse check
--> generation queue for missing assets
--> file/visual/audio QA records
--> explicit owner approval
--> promotion into Ren'Py game/
--> manifest + sidecar refresh
--> director dashboard / preview cards
--> Ren'Py lint, runtime verify, artifact audit
+장면 노트 → 필요한 에셋 추출 → 기존 후보 확인 → 누락 에셋 queue
+        → QA 기록·사용자 승인 → game/ 반영 → manifest·sidecar 갱신
+        → director 화면·Ren’Py 검증·산출물 감사
 ```
-
-## Repository boundaries
 
 This repository should contain reusable toolkit source only:
 
@@ -61,23 +51,25 @@ It should **not** contain title-specific runtime state:
 
 Individual games keep their own `game/`, production docs, manifests, screenshots, generated candidates, and promotion records under the actual Ren'Py project root.
 
-## Install from source
+### Windows 콘솔
 
-From the repository root in any normal clone:
+Director 상태 출력은 CP949 같은 기존 Windows 코드 페이지에서도 읽을 수 있도록 ASCII 표식을 사용합니다. 파일 내용과 승인 동작은 바꾸지 않습니다.
 
-```bash
+## 실행·사용 방법
+
+저장소 루트에서 설치하고 CLI를 확인합니다. `pytest`는 개발 환경에 별도로 필요합니다.
+
+```powershell
 python -m pip install -e .
 vn-auto --help
 vn-auto --version
+python -m pytest -q
 ```
 
-`pyproject.toml` defines the `vn-auto` entry point. The checkout-specific paths shown in older examples below are replaced with placeholders; supply paths that exist on your machine. The 2026-09-23 review did not rerun tests. See the dated 2026-10-07 verification record above for the later agent-executed local run.
+실제 제작 명령에는 **존재하는 프로젝트·SDK·워크플로우·vault의 절대 경로**를 넣습니다. 프로젝트 계약을 찾지 못하면 툴킷 checkout을 제작 대상으로 자동 선택하지 않고 중단합니다.
 
-## Run tests
-
-With `pytest` installed in the development environment, run `python -m pytest -q` from the repository root. This is a test command, not a claim of a fresh test run.
-
-## Bootstrap a title
+<details>
+<summary>타이틀 초기화와 경로 확인</summary>
 
 Use explicit absolute paths for bootstrap. After a title has `docs/automation/project_contract.json`, project tools may run from that project root, but otherwise fail closed instead of silently selecting the toolkit checkout.
 
@@ -93,7 +85,10 @@ vn-auto init \
 
 Confirm the `INIT_VN_AUTOMATION_PROJECT` banner prints the intended `project_root` before continuing. When `--obsidian-vault` is supplied without `--obsidian-project-root`, init now creates a title-scoped default at `<vault>/<game_slug>/VN`.
 
-## Common commands
+</details>
+
+<details>
+<summary>주요 제작·검증 명령 전체</summary>
 
 ```bash
 vn-auto preflight --project-root "/path/to/my_title" --skip-comfyui
@@ -118,7 +113,20 @@ vn-auto capture-scene --project-root "/path/to/my_title" --scene-id opening --ca
 vn-auto audit --project-root "/path/to/my_title" --strict
 ```
 
-## Release-ready acceptance
+</details>
+
+## 검증과 한계
+
+| 기록 | 확인된 결과 | 확인하지 않은 범위 |
+| --- | --- | --- |
+| [2026-10-07 로컬 재현](docs/verification/2026-10-07/README.md) | AI 에이전트가 Windows / Python 3.13.12에서 전체 **132개 통과**. 선택 검사 5개는 전체에 포함 | Ren’Py·ComfyUI·GPU·외부 API의 실제 제작 |
+| 2026-09-23 감사 | 132개 테스트 통과와 Windows 콘솔 회귀 검사 기록 | 같은 날짜 문서 정리 과정의 재실행을 의미하지 않음 |
+| 구현·덮어쓰기 검사 | 원자적 교체 호출과 이전 내용 백업 확인 | 프로세스 중단·전원 차단·디스크 장애 주입 검증 |
+
+이는 날짜별 로컬 검증 기록이며 원격 CI 통과나 현재 환경의 새 실행 결과로 표시하지 않습니다. GitHub Actions 워크플로·실행 기록은 기존 2026-09-23 기록에 없습니다. 깨끗한 새 타이틀의 전체 bootstrap, queue 실행, 승격 에셋과 Ren’Py lint/runtime E2E는 별도 확인이 필요합니다.
+
+<details>
+<summary>릴리스 준비 판정 기준</summary>
 
 Before calling a toolkit checkout release-ready:
 
@@ -132,10 +140,14 @@ Before calling a toolkit checkout release-ready:
 
 See `docs/automation/productization_readme.md` for the extended product workflow and Telegram approval UX.
 
-## Windows console compatibility
+</details>
 
-Director console status output uses ASCII markers so the CLI also works in legacy Windows code pages such as CP949. This affects display only; project files and approval behavior are unchanged.
+## 기여와 관련 문서
 
-## Automated verification (2026-09-23)
+이지섭과 AI 도구의 협업 프로젝트입니다. 게임 제작이라는 원래 용도를 유지하며 파일 검증·실패 처리·교체·백업의 구현과 실행 근거를 소개합니다. 기업 운영 경력이나 독립적인 수작업 구현 전체를 주장하지 않습니다.
 
-No GitHub Actions workflows or runs are configured/recorded. The local test/build records above are not a remote CI pass.
+- [운영 관점의 재현 예제](docs/operations-walkthrough.md)
+- [날짜·환경·출력 원문](docs/verification/2026-10-07/README.md)
+- [제품화 흐름·Telegram 승인 UX](docs/automation/productization_readme.md)
+- [보안 안내](SECURITY.md)
+- [IT 운영 포트폴리오](https://github.com/jisub-lee-0906/engineering-portfolio)
